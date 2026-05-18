@@ -1,12 +1,36 @@
-from flask import Flask, render_template, request, redirect, url_for, abort, g
+from flask import Flask, render_template, request, redirect, url_for, abort, g, session, flash
 import sqlite3
+import os
+import sys
+import secrets
+import getpass
+from functools import wraps
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "helpdesk.db"
+import bcrypt
+
+BASE_DIR = Path(__file__).parent
+DB_PATH = BASE_DIR / "helpdesk.db"
+SECRET_KEY_FILE = BASE_DIR / ".flask_secret"
+
+
+def _load_secret_key():
+    """Load Flask SECRET_KEY from env, or from a local file (generated on first run)."""
+    env_key = os.environ.get("HELPDESK_SECRET_KEY")
+    if env_key:
+        return env_key
+    if SECRET_KEY_FILE.exists():
+        return SECRET_KEY_FILE.read_text(encoding="utf-8").strip()
+    key = secrets.token_hex(32)
+    SECRET_KEY_FILE.write_text(key, encoding="utf-8")
+    return key
+
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "dev-change-me-before-prod"
+app.config["SECRET_KEY"] = _load_secret_key()
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 STATUSES = ["open", "in_progress", "waiting", "resolved", "closed"]
 PRIORITIES = ["urgent", "high", "normal", "low"]
@@ -33,6 +57,12 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.executescript(
         """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS tickets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             submitter_name TEXT NOT NULL,
@@ -64,6 +94,86 @@ def init_db():
 
 def now_iso():
     return datetime.utcnow().isoformat(timespec="seconds")
+
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+def hash_password(plain: str) -> str:
+    return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except ValueError:
+        return False
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if g.get("current_user") is None:
+            return redirect(url_for("login", next=request.path))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+@app.before_request
+def load_current_user():
+    g.current_user = None
+    user_id = session.get("user_id")
+    if user_id is None:
+        return
+    row = get_db().execute(
+        "SELECT id, username FROM users WHERE id = ?", (user_id,)
+    ).fetchone()
+    if row is None:
+        # stale session (user was deleted)
+        session.clear()
+        return
+    g.current_user = row
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if g.get("current_user") is not None:
+        return redirect(url_for("staff_dashboard"))
+
+    error = None
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+        row = get_db().execute(
+            "SELECT id, username, password_hash FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()
+        if row is not None and verify_password(password, row["password_hash"]):
+            session.clear()
+            session["user_id"] = row["id"]
+            session.permanent = False
+            next_url = request.args.get("next") or request.form.get("next") or url_for("staff_dashboard")
+            # only allow relative redirects
+            if not next_url.startswith("/"):
+                next_url = url_for("staff_dashboard")
+            return redirect(next_url)
+        error = "Invalid username or password."
+        return render_template("login.html", error=error, username=username), 401
+
+    return render_template("login.html", error=None, username="")
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+# ---------------------------------------------------------------------------
+# Public + staff routes
+# ---------------------------------------------------------------------------
 
 
 @app.route("/", methods=["GET", "POST"])
@@ -117,6 +227,7 @@ def submit():
 
 
 @app.route("/staff")
+@login_required
 def staff_dashboard():
     status_filter = request.args.get("status", "active")
     db = get_db()
@@ -149,6 +260,7 @@ def staff_dashboard():
 
 
 @app.route("/staff/ticket/<int:ticket_id>", methods=["GET", "POST"])
+@login_required
 def staff_ticket(ticket_id):
     db = get_db()
     ticket = db.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
@@ -172,7 +284,8 @@ def staff_ticket(ticket_id):
             )
             db.commit()
         elif action == "comment":
-            author = (request.form.get("author") or "").strip() or "staff"
+            # Comment author is always the logged-in staff user (no spoofing via form).
+            author = g.current_user["username"]
             body = (request.form.get("body") or "").strip()
             internal = 1 if request.form.get("internal") == "1" else 0
             if not body:
@@ -216,6 +329,99 @@ def bad_request(e):
     return render_template("error.html", code=400, message="Bad request."), 400
 
 
+# ---------------------------------------------------------------------------
+# CLI commands (user management)
+# ---------------------------------------------------------------------------
+
+
+def cli_create_user(argv):
+    username = argv[0].strip() if argv else input("Username: ").strip()
+    if not username:
+        print("Username is required.", file=sys.stderr)
+        return 2
+    pw1 = getpass.getpass("Password: ")
+    pw2 = getpass.getpass("Confirm password: ")
+    if pw1 != pw2:
+        print("Passwords do not match.", file=sys.stderr)
+        return 2
+    if len(pw1) < 8:
+        print("Password must be at least 8 characters.", file=sys.stderr)
+        return 2
+
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+            (username, hash_password(pw1), now_iso()),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        print(f"User '{username}' already exists.", file=sys.stderr)
+        return 1
+    finally:
+        conn.close()
+    print(f"Created user '{username}'.")
+    return 0
+
+
+def cli_list_users(argv):
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT id, username, created_at FROM users ORDER BY id"
+    ).fetchall()
+    conn.close()
+    if not rows:
+        print("(no users yet — run: python app.py create-user <name>)")
+        return 0
+    print(f"{'ID':>3}  {'USERNAME':<20}  CREATED")
+    for r in rows:
+        print(f"{r['id']:>3}  {r['username']:<20}  {r['created_at']}")
+    return 0
+
+
+def cli_delete_user(argv):
+    if not argv:
+        print("Usage: python app.py delete-user <username>", file=sys.stderr)
+        return 2
+    username = argv[0]
+    init_db()
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.execute("DELETE FROM users WHERE username = ?", (username,))
+    conn.commit()
+    conn.close()
+    if cur.rowcount == 0:
+        print(f"No user named '{username}'.", file=sys.stderr)
+        return 1
+    print(f"Deleted user '{username}'.")
+    return 0
+
+
+def cli_help(argv):
+    print(
+        "Usage:\n"
+        "  python app.py                    Start the web server\n"
+        "  python app.py create-user [name] Create a new staff user (prompts for password)\n"
+        "  python app.py list-users         List staff users\n"
+        "  python app.py delete-user <name> Delete a staff user\n"
+    )
+    return 0
+
+
+COMMANDS = {
+    "create-user": cli_create_user,
+    "list-users": cli_list_users,
+    "delete-user": cli_delete_user,
+    "help": cli_help,
+    "--help": cli_help,
+    "-h": cli_help,
+}
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] in COMMANDS:
+        sys.exit(COMMANDS[sys.argv[1]](sys.argv[2:]))
     init_db()
     app.run(host="0.0.0.0", port=5000, debug=False)

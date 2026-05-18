@@ -26,21 +26,37 @@ Internal IT ticketing system. Flask + SQLite.
    New-NetFirewallRule -DisplayName "Helpdesk 5000" -Direction Inbound -Protocol TCP -LocalPort 5000 -Action Allow
    ```
 
-## What's in pass 1
+## Create your first staff user
 
-- `/` — public form anyone can submit a ticket through.
+Before anyone can sign in, create at least one user from the command line:
+
+```powershell
+venv\Scripts\Activate.ps1
+python app.py create-user alex
+```
+
+You'll be prompted for a password (min 8 chars). Repeat for each IT staff member.
+
+Other user commands:
+
+```powershell
+python app.py list-users
+python app.py delete-user alex
+```
+
+## What's in passes 1 & 2
+
+- `/` — public form anyone can submit a ticket through (no login required).
+- `/login` — staff sign-in. `/staff` and ticket pages require a session.
 - `/staff` — IT dashboard. Filter by status, click a row to open a ticket,
   change status/priority/assignee, add public comments or internal notes.
+- Passwords are bcrypt-hashed in a `users` table.
+- The Flask session secret is generated on first run and stored in
+  `.flask_secret` (gitignored). Override by setting `HELPDESK_SECRET_KEY`.
 - SQLite database `helpdesk.db` is created automatically on first run.
-
-## Important caveat
-
-Pass 1 has **no authentication**. Anyone who can reach the server can see `/staff`.
-Keep it on the LAN until pass 2 adds login.
 
 ## What's next
 
-- Pass 2: staff login (bcrypt-hashed passwords, sessions, `@login_required`).
 - Pass 3: email-to-ticket polling from your shared mailbox over IMAP.
 - Pass 4: outbound email notifications via SMTP, plus running as a Windows
   Service via NSSM + waitress.

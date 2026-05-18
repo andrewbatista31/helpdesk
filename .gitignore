@@ -20,6 +20,7 @@ server.err
 
 # Secrets / local config
 .env
+.flask_secret
 instance/
 
 # Editor / OS

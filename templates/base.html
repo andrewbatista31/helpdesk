@@ -10,6 +10,15 @@
   <header>
     <a href="{{ url_for('submit') }}">Submit ticket</a>
     <a href="{{ url_for('staff_dashboard') }}">Staff dashboard</a>
+    <span class="spacer"></span>
+    {% if g.current_user %}
+      <span class="who">Signed in as <strong>{{ g.current_user.username }}</strong></span>
+      <form method="post" action="{{ url_for('logout') }}" class="logout">
+        <button type="submit">Sign out</button>
+      </form>
+    {% else %}
+      <a href="{{ url_for('login') }}">Staff sign in</a>
+    {% endif %}
   </header>
   <main>{% block content %}{% endblock %}</main>
 </body>

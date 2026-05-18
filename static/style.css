@@ -14,9 +14,24 @@ header {
   padding: .75rem 1.5rem;
   display: flex;
   gap: 1.5rem;
+  align-items: center;
 }
 header a { color: #fff; text-decoration: none; font-weight: 600; }
 header a:hover { text-decoration: underline; }
+header .spacer { flex: 1; }
+header .who { color: #cbd5e1; font-size: .85rem; }
+header .who strong { color: #fff; }
+header .logout { margin: 0; }
+header .logout button {
+  background: transparent;
+  color: #fff;
+  border: 1px solid #4b5563;
+  padding: .25rem .65rem;
+  font-size: .85rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+header .logout button:hover { background: #374151; }
 
 main {
   max-width: 1100px;

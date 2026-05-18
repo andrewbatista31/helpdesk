@@ -53,10 +53,7 @@
 
 <form method="post" class="comment-form">
   <input type="hidden" name="action" value="comment">
-  <label>Your name
-    <input name="author" placeholder="staff name">
-  </label>
-  <label>Comment
+  <label>Comment as <strong>{{ g.current_user.username }}</strong>
     <textarea name="body" rows="4" required></textarea>
   </label>
   <label class="inline">
