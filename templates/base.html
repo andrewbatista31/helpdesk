@@ -9,7 +9,12 @@
 <body>
   <header>
     <a href="{{ url_for('submit') }}">Submit ticket</a>
-    <a href="{{ url_for('staff_dashboard') }}">Staff dashboard</a>
+    {% if g.current_user %}
+    <a href="{{ url_for('staff_dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('staff_queue') }}">Queue</a>
+    {% else %}
+    <a href="{{ url_for('staff_dashboard') }}">Staff</a>
+    {% endif %}
     <span class="spacer"></span>
     {% if g.current_user %}
       <span class="who">Signed in as <strong>{{ g.current_user.username }}</strong></span>

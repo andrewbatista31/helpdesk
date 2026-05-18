@@ -35,6 +35,7 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 STATUSES = ["open", "in_progress", "waiting", "resolved", "closed"]
 PRIORITIES = ["urgent", "high", "normal", "low"]
 PRIORITY_ORDER = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
+AGING_THRESHOLD_DAYS = 3
 
 
 def get_db():
@@ -229,21 +230,108 @@ def submit():
 @app.route("/staff")
 @login_required
 def staff_dashboard():
-    status_filter = request.args.get("status", "active")
     db = get_db()
-    if status_filter == "all":
-        rows = db.execute("SELECT * FROM tickets").fetchall()
-    elif status_filter == "active":
-        rows = db.execute(
-            "SELECT * FROM tickets WHERE status NOT IN ('resolved', 'closed')"
-        ).fetchall()
-    elif status_filter in STATUSES:
-        rows = db.execute(
-            "SELECT * FROM tickets WHERE status = ?", (status_filter,)
-        ).fetchall()
-    else:
-        rows = []
+    me = g.current_user["username"]
 
+    def scalar(sql, params=()):
+        return db.execute(sql, params).fetchone()[0]
+
+    open_total = scalar(
+        "SELECT COUNT(*) FROM tickets WHERE status NOT IN ('resolved','closed')"
+    )
+    unassigned = scalar(
+        "SELECT COUNT(*) FROM tickets "
+        "WHERE status NOT IN ('resolved','closed') "
+        "AND (assigned_to IS NULL OR assigned_to = '')"
+    )
+    mine_count = scalar(
+        "SELECT COUNT(*) FROM tickets "
+        "WHERE status NOT IN ('resolved','closed') "
+        "AND LOWER(assigned_to) = LOWER(?)",
+        (me,),
+    )
+    in_progress = scalar(
+        "SELECT COUNT(*) FROM tickets WHERE status = 'in_progress'"
+    )
+
+    rows = db.execute(
+        "SELECT priority, COUNT(*) AS n FROM tickets "
+        "WHERE status NOT IN ('resolved','closed') GROUP BY priority"
+    ).fetchall()
+    priority_counts = {p: 0 for p in PRIORITIES}
+    for r in rows:
+        priority_counts[r["priority"]] = r["n"]
+
+    aging = db.execute(
+        """
+        SELECT id, subject, priority, status, assigned_to, created_at,
+               CAST(julianday('now') - julianday(created_at) AS INTEGER) AS days_open
+        FROM tickets
+        WHERE status NOT IN ('resolved','closed')
+          AND julianday('now') - julianday(created_at) >= ?
+        ORDER BY julianday('now') - julianday(created_at) DESC, id ASC
+        """,
+        (AGING_THRESHOLD_DAYS,),
+    ).fetchall()
+
+    my_rows = db.execute(
+        "SELECT * FROM tickets "
+        "WHERE status NOT IN ('resolved','closed') "
+        "AND LOWER(assigned_to) = LOWER(?)",
+        (me,),
+    ).fetchall()
+    my_tickets = sorted(
+        my_rows,
+        key=lambda r: (
+            PRIORITY_ORDER.get(r["priority"], 99),
+            -datetime.fromisoformat(r["updated_at"]).timestamp(),
+        ),
+    )
+
+    return render_template(
+        "dashboard.html",
+        open_total=open_total,
+        unassigned=unassigned,
+        mine_count=mine_count,
+        in_progress=in_progress,
+        priority_counts=priority_counts,
+        priorities=PRIORITIES,
+        aging=aging,
+        aging_threshold=AGING_THRESHOLD_DAYS,
+        my_tickets=my_tickets,
+    )
+
+
+@app.route("/staff/tickets")
+@login_required
+def staff_queue():
+    status_filter = request.args.get("status", "active")
+    filter_name = request.args.get("filter")  # None | 'unassigned' | 'mine'
+    priority_filter = request.args.get("priority")
+    me = g.current_user["username"]
+    db = get_db()
+
+    query = "SELECT * FROM tickets WHERE 1=1"
+    params = []
+
+    if status_filter == "active":
+        query += " AND status NOT IN ('resolved','closed')"
+    elif status_filter in STATUSES:
+        query += " AND status = ?"
+        params.append(status_filter)
+    # status_filter == "all" adds no clause
+
+    if filter_name == "unassigned":
+        query += " AND (assigned_to IS NULL OR assigned_to = '')"
+    elif filter_name == "mine":
+        query += " AND LOWER(assigned_to) = LOWER(?)"
+        params.append(me)
+
+    if priority_filter in PRIORITIES:
+        query += " AND priority = ?"
+        params.append(priority_filter)
+
+    rows = db.execute(query, params).fetchall()
     tickets = sorted(
         rows,
         key=lambda r: (
@@ -255,7 +343,10 @@ def staff_dashboard():
         "staff.html",
         tickets=tickets,
         status_filter=status_filter,
+        filter_name=filter_name,
+        priority_filter=priority_filter,
         statuses=STATUSES,
+        priorities=PRIORITIES,
     )
 
 

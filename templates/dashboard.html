@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="stat-cards">
+  <a class="stat-card" href="{{ url_for('staff_queue') }}">
+    <div class="stat-label">Open tickets</div>
+    <div class="stat-value">{{ open_total }}</div>
+  </a>
+  <a class="stat-card" href="{{ url_for('staff_queue') }}?filter=unassigned">
+    <div class="stat-label">Unassigned</div>
+    <div class="stat-value {% if unassigned > 0 %}warn{% endif %}">{{ unassigned }}</div>
+  </a>
+  <a class="stat-card" href="{{ url_for('staff_queue') }}?filter=mine">
+    <div class="stat-label">Assigned to me</div>
+    <div class="stat-value">{{ mine_count }}</div>
+  </a>
+  <a class="stat-card" href="{{ url_for('staff_queue') }}?status=in_progress">
+    <div class="stat-label">In progress</div>
+    <div class="stat-value">{{ in_progress }}</div>
+  </a>
+</div>
+
+<div class="dash-grid">
+  <section class="aging panel">
+    <h2>Open more than {{ aging_threshold }} days
+      <span class="badge {% if aging|length > 0 %}warn{% endif %}">{{ aging|length }}</span>
+    </h2>
+    {% if aging %}
+    <table>
+      <thead>
+        <tr><th>#</th><th>Priority</th><th>Subject</th><th>Assigned</th><th class="num">Days</th></tr>
+      </thead>
+      <tbody>
+        {% for t in aging %}
+        <tr onclick="location.href='{{ url_for('staff_ticket', ticket_id=t.id) }}'">
+          <td>{{ t.id }}</td>
+          <td class="prio prio-{{ t.priority }}">{{ t.priority }}</td>
+          <td>{{ t.subject }}</td>
+          <td>{{ t.assigned_to or '—' }}</td>
+          <td class="num"><strong>{{ t.days_open }}</strong></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">Nothing aging — good work.</p>
+    {% endif %}
+  </section>
+
+  <section class="by-priority panel">
+    <h2>Open by priority</h2>
+    <ul class="priority-list">
+      {% for p in priorities %}
+      <li>
+        <a href="{{ url_for('staff_queue') }}?status=active&priority={{ p }}">
+          <span class="prio prio-{{ p }}">{{ p }}</span>
+          <span class="prio-count">{{ priority_counts[p] }}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>
+
+<section class="my-queue panel">
+  <h2>My open tickets <span class="badge">{{ my_tickets|length }}</span></h2>
+  {% if my_tickets %}
+  <table>
+    <thead>
+      <tr><th>#</th><th>Priority</th><th>Status</th><th>Subject</th><th>Updated</th></tr>
+    </thead>
+    <tbody>
+      {% for t in my_tickets %}
+      <tr onclick="location.href='{{ url_for('staff_ticket', ticket_id=t.id) }}'">
+        <td>{{ t.id }}</td>
+        <td class="prio prio-{{ t.priority }}">{{ t.priority }}</td>
+        <td>{{ t.status }}</td>
+        <td>{{ t.subject }}</td>
+        <td>{{ t.updated_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">Nothing assigned to you right now.</p>
+  {% endif %}
+</section>
+{% endblock %}

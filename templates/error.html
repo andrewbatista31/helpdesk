@@ -3,5 +3,5 @@
 {% block content %}
 <h1>{{ code }}</h1>
 <p>{{ message }}</p>
-<p><a href="{{ url_for('submit') }}">Go to submit form</a> &middot; <a href="{{ url_for('staff_dashboard') }}">Go to dashboard</a></p>
+<p><a href="{{ url_for('submit') }}">Go to submit form</a> &middot; <a href="{{ url_for('staff_dashboard') }}">Dashboard</a> &middot; <a href="{{ url_for('staff_queue') }}">Queue</a></p>
 {% endblock %}

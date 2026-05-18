@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Ticket #{{ ticket.id }}{% endblock %}
 {% block content %}
-<p class="back"><a href="{{ url_for('staff_dashboard') }}">&larr; Back to dashboard</a></p>
+<p class="back"><a href="{{ url_for('staff_queue') }}">&larr; Back to queue</a></p>
 
 <h1>#{{ ticket.id }} &middot; {{ ticket.subject }}</h1>
 
