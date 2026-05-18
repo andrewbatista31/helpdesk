@@ -294,6 +294,7 @@ dl.meta dd { margin: 0; }
 
 /* --- Calendar --- */
 
+.calendar-section { margin-top: 1.5rem; }
 .cal-header {
   display: flex;
   justify-content: space-between;
@@ -302,7 +303,8 @@ dl.meta dd { margin: 0; }
   gap: .75rem;
   margin-bottom: .75rem;
 }
-.cal-header h1 { margin: 0; }
+.cal-header h1,
+.cal-header h2 { margin: 0; }
 .cal-nav { display: flex; gap: .5rem; flex-wrap: wrap; }
 .cal-nav .btn {
   display: inline-block;

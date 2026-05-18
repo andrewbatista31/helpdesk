@@ -300,8 +300,7 @@ def staff_dashboard():
         ),
     )
 
-    return render_template(
-        "dashboard.html",
+    ctx = dict(
         open_total=open_total,
         unassigned=unassigned,
         mine_count=mine_count,
@@ -312,6 +311,8 @@ def staff_dashboard():
         aging_threshold=AGING_THRESHOLD_DAYS,
         my_tickets=my_tickets,
     )
+    ctx.update(_calendar_context(request.args.get("month")))
+    return render_template("dashboard.html", **ctx)
 
 
 @app.route("/staff/tickets")
@@ -414,10 +415,9 @@ def _parse_event_form(form):
     return event_date, event_time, title, notes, errors
 
 
-@app.route("/staff/calendar")
-@login_required
-def staff_calendar():
-    year, month = _parse_month_arg(request.args.get("month"))
+def _calendar_context(month_arg):
+    """Build the variables the embedded month-grid template needs."""
+    year, month = _parse_month_arg(month_arg)
     today = date.today()
 
     cal = cal_mod.Calendar(firstweekday=6)  # Sunday-first
@@ -444,19 +444,29 @@ def staff_calendar():
     prev_y, prev_m = _shift_month(year, month, -1)
     next_y, next_m = _shift_month(year, month, 1)
 
-    return render_template(
-        "calendar.html",
-        weeks=weeks,
-        year=year,
-        month=month,
-        month_name=cal_mod.month_name[month],
-        events_by_date=events_by_date,
-        today=today,
-        current_month=_month_str(year, month),
-        prev_month=_month_str(prev_y, prev_m),
-        next_month=_month_str(next_y, next_m),
-        day_labels=["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-    )
+    return {
+        "weeks": weeks,
+        "cal_year": year,
+        "cal_month": month,
+        "cal_month_name": cal_mod.month_name[month],
+        "events_by_date": events_by_date,
+        "today": today,
+        "current_month": _month_str(year, month),
+        "prev_month": _month_str(prev_y, prev_m),
+        "next_month": _month_str(next_y, next_m),
+        "day_labels": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+    }
+
+
+@app.route("/staff/calendar")
+@login_required
+def staff_calendar():
+    """Legacy alias — calendar is now embedded in the /staff dashboard."""
+    month = request.args.get("month", "")
+    url = url_for("staff_dashboard")
+    if month:
+        url += f"?month={month}"
+    return redirect(url + "#calendar")
 
 
 @app.route("/staff/calendar/event/new", methods=["GET", "POST"])
@@ -493,7 +503,7 @@ def staff_event_new():
         )
         db.commit()
         y, m, _ = event_date.split("-")
-        return redirect(url_for("staff_calendar", month=f"{y}-{m}"))
+        return redirect(url_for("staff_dashboard", month=f"{y}-{m}") + "#calendar")
 
     prefill_date = request.args.get("date") or date.today().isoformat()
     try:
@@ -543,7 +553,7 @@ def staff_event_edit(event_id):
         )
         db.commit()
         y, m, _ = event_date.split("-")
-        return redirect(url_for("staff_calendar", month=f"{y}-{m}"))
+        return redirect(url_for("staff_dashboard", month=f"{y}-{m}") + "#calendar")
 
     form = {
         "event_date": event["event_date"],
@@ -573,7 +583,7 @@ def staff_event_delete(event_id):
     db.execute("DELETE FROM events WHERE id = ?", (event_id,))
     db.commit()
     y, m, _ = event["event_date"].split("-")
-    return redirect(url_for("staff_calendar", month=f"{y}-{m}"))
+    return redirect(url_for("staff_dashboard", month=f"{y}-{m}") + "#calendar")
 
 
 def _back_month_from(date_str):

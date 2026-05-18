@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{% if event %}Edit event{% else %}New event{% endif %}{% endblock %}
 {% block content %}
-<p class="back"><a href="{{ url_for('staff_calendar', month=back_month) }}">&larr; Back to calendar</a></p>
+<p class="back"><a href="{{ url_for('staff_dashboard', month=back_month) }}#calendar">&larr; Back to calendar</a></p>
 
 <h1>{% if event %}Edit event{% else %}New event{% endif %}</h1>
 
