@@ -5,8 +5,10 @@ import sys
 import secrets
 import getpass
 from functools import wraps
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import calendar as cal_mod
+import threading
+import time
 from pathlib import Path
 
 import bcrypt
@@ -99,6 +101,23 @@ def init_db():
             created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date);
+
+        CREATE TABLE IF NOT EXISTS recurring_tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subject TEXT NOT NULL,
+            description TEXT NOT NULL,
+            priority TEXT NOT NULL DEFAULT 'normal',
+            assigned_to TEXT,
+            interval_value INTEGER NOT NULL,
+            interval_unit TEXT NOT NULL CHECK(interval_unit IN ('day','week','month')),
+            start_date TEXT NOT NULL,
+            next_run_date TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            last_generated_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_recurring_next ON recurring_tickets(next_run_date) WHERE active = 1;
         """
     )
     conn.commit()
@@ -242,6 +261,14 @@ def submit():
 @app.route("/staff")
 @login_required
 def staff_dashboard():
+    # Lazy catch-up: generate any due recurring tickets before counting.
+    # (The background thread does this on a 60-second tick too; this is the
+    # belt-and-suspenders path for when the dashboard is hit cold.)
+    try:
+        generate_due_tickets()
+    except Exception:
+        app.logger.exception("recurring catch-up at dashboard load failed")
+
     db = get_db()
     me = g.current_user["username"]
 
@@ -364,6 +391,195 @@ def staff_queue():
 
 
 # ---------------------------------------------------------------------------
+# Recurring tickets (schedule helpers + generator + background thread)
+# ---------------------------------------------------------------------------
+
+
+def _add_months(d, n):
+    total = d.month - 1 + n
+    year = d.year + total // 12
+    month = total % 12 + 1
+    day = min(d.day, cal_mod.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _advance_schedule(d, value, unit):
+    if unit == "day":
+        return d + timedelta(days=value)
+    if unit == "week":
+        return d + timedelta(weeks=value)
+    if unit == "month":
+        return _add_months(d, value)
+    raise ValueError(f"unknown interval_unit: {unit!r}")
+
+
+def _schedule_description(value, unit):
+    if value == 1:
+        return f"every {unit}"
+    plural = {"day": "days", "week": "weeks", "month": "months"}
+    return f"every {value} {plural.get(unit, unit + 's')}"
+
+
+def _parse_recurring_form(form):
+    subject = (form.get("subject") or "").strip()
+    description = (form.get("description") or "").strip()
+    priority = (form.get("priority") or "normal").strip()
+    assigned_to = (form.get("assigned_to") or "").strip() or None
+    interval_value_raw = (form.get("interval_value") or "").strip()
+    interval_unit = (form.get("interval_unit") or "").strip()
+    start_date = (form.get("start_date") or "").strip()
+    active = 1 if form.get("active") == "1" else 0
+    errors = []
+    if not subject:
+        errors.append("Subject is required.")
+    if len(subject) > 200:
+        errors.append("Subject must be 200 characters or fewer.")
+    if not description:
+        errors.append("Description is required.")
+    if priority not in PRIORITIES:
+        errors.append("Invalid priority.")
+    try:
+        interval_value = int(interval_value_raw)
+        if interval_value < 1 or interval_value > 365:
+            raise ValueError
+    except ValueError:
+        interval_value = 0
+        errors.append("Interval must be a whole number between 1 and 365.")
+    if interval_unit not in ("day", "week", "month"):
+        errors.append("Interval unit must be day, week, or month.")
+    try:
+        date.fromisoformat(start_date)
+    except ValueError:
+        errors.append("Start date is required.")
+    return (
+        {
+            "subject": subject,
+            "description": description,
+            "priority": priority,
+            "assigned_to": assigned_to,
+            "interval_value": interval_value,
+            "interval_unit": interval_unit,
+            "start_date": start_date,
+            "active": active,
+        },
+        errors,
+    )
+
+
+def generate_due_tickets():
+    """Create one catch-up ticket per active, due schedule and advance next_run_date.
+
+    Catch-up policy: if a schedule's next_run_date is in the past (e.g., the
+    server was offline), generate exactly ONE ticket and skip next_run_date
+    forward to the next future date. This avoids ticket-storms after outages.
+    """
+    today = date.today()
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM recurring_tickets WHERE active = 1 AND next_run_date <= ?",
+        (today.isoformat(),),
+    ).fetchall()
+    if not rows:
+        return 0
+    now = now_iso()
+    generated = 0
+    for r in rows:
+        db.execute(
+            """
+            INSERT INTO tickets (submitter_name, submitter_email, subject, description,
+                                 status, priority, assigned_to, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?)
+            """,
+            (
+                "[Recurring]",
+                "noreply@helpdesk.local",
+                r["subject"],
+                r["description"],
+                r["priority"],
+                r["assigned_to"],
+                now,
+                now,
+            ),
+        )
+        generated += 1
+        next_run = date.fromisoformat(r["next_run_date"])
+        while next_run <= today:
+            next_run = _advance_schedule(
+                next_run, r["interval_value"], r["interval_unit"]
+            )
+        db.execute(
+            "UPDATE recurring_tickets SET next_run_date = ?, last_generated_at = ? "
+            "WHERE id = ?",
+            (next_run.isoformat(), now, r["id"]),
+        )
+    db.commit()
+    return generated
+
+
+def _projected_recurring_runs(first_day, last_day):
+    """Return [{date, recurring_id, title}, ...] for each active schedule that
+    will fire inside [first_day, last_day]. Only projects forward from
+    next_run_date (past dates have already been materialized into tickets)."""
+    out = []
+    rows = get_db().execute(
+        "SELECT id, subject, interval_value, interval_unit, next_run_date "
+        "FROM recurring_tickets WHERE active = 1"
+    ).fetchall()
+    for r in rows:
+        try:
+            next_run = date.fromisoformat(r["next_run_date"])
+        except ValueError:
+            continue
+        safety = 200  # guard against pathological intervals
+        while next_run <= last_day and safety > 0:
+            if next_run >= first_day:
+                out.append(
+                    {
+                        "date": next_run.isoformat(),
+                        "recurring_id": r["id"],
+                        "title": r["subject"],
+                    }
+                )
+            next_run = _advance_schedule(
+                next_run, r["interval_value"], r["interval_unit"]
+            )
+            safety -= 1
+    return out
+
+
+# --- Background scheduler -------------------------------------------------
+
+_scheduler_started = False
+_scheduler_lock = threading.Lock()
+
+
+def start_scheduler(interval_seconds=60):
+    """Start a daemon thread that periodically generates due recurring tickets.
+
+    Idempotent — safe to call multiple times. The thread exits when the
+    process exits because it's a daemon.
+    """
+    global _scheduler_started
+    with _scheduler_lock:
+        if _scheduler_started:
+            return
+        _scheduler_started = True
+
+    def loop():
+        time.sleep(5)  # let app finish starting
+        while True:
+            try:
+                with app.app_context():
+                    generate_due_tickets()
+            except Exception:
+                app.logger.exception("recurring scheduler tick failed")
+            time.sleep(interval_seconds)
+
+    t = threading.Thread(target=loop, daemon=True, name="recurring-scheduler")
+    t.start()
+
+
+# ---------------------------------------------------------------------------
 # Calendar + events
 # ---------------------------------------------------------------------------
 
@@ -441,6 +657,10 @@ def _calendar_context(month_arg):
     for r in rows:
         events_by_date.setdefault(r["event_date"], []).append(r)
 
+    recurring_by_date = {}
+    for run in _projected_recurring_runs(first_day, last_day):
+        recurring_by_date.setdefault(run["date"], []).append(run)
+
     prev_y, prev_m = _shift_month(year, month, -1)
     next_y, next_m = _shift_month(year, month, 1)
 
@@ -450,6 +670,7 @@ def _calendar_context(month_arg):
         "cal_month": month,
         "cal_month_name": cal_mod.month_name[month],
         "events_by_date": events_by_date,
+        "recurring_by_date": recurring_by_date,
         "today": today,
         "current_month": _month_str(year, month),
         "prev_month": _month_str(prev_y, prev_m),
@@ -596,6 +817,225 @@ def _back_month_from(date_str):
         return _month_str(today.year, today.month)
 
 
+# ---------------------------------------------------------------------------
+# Recurring schedule management routes
+# ---------------------------------------------------------------------------
+
+
+@app.route("/staff/recurring")
+@login_required
+def staff_recurring_list():
+    rows = get_db().execute(
+        "SELECT * FROM recurring_tickets "
+        "ORDER BY active DESC, next_run_date ASC, id ASC"
+    ).fetchall()
+    today = date.today()
+    schedules = []
+    for r in rows:
+        d = dict(r)
+        d["schedule_text"] = _schedule_description(
+            r["interval_value"], r["interval_unit"]
+        )
+        try:
+            next_run = date.fromisoformat(r["next_run_date"])
+            d["days_until_next"] = (next_run - today).days
+        except ValueError:
+            d["days_until_next"] = None
+        schedules.append(d)
+    return render_template("recurring_list.html", schedules=schedules)
+
+
+@app.route("/staff/recurring/new", methods=["GET", "POST"])
+@login_required
+def staff_recurring_new():
+    if request.method == "POST":
+        data, errors = _parse_recurring_form(request.form)
+        if errors:
+            return (
+                render_template(
+                    "recurring_form.html",
+                    schedule=None,
+                    form=request.form,
+                    errors=errors,
+                    priorities=PRIORITIES,
+                ),
+                400,
+            )
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO recurring_tickets (
+                subject, description, priority, assigned_to,
+                interval_value, interval_unit, start_date, next_run_date,
+                active, created_by, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                data["subject"],
+                data["description"],
+                data["priority"],
+                data["assigned_to"],
+                data["interval_value"],
+                data["interval_unit"],
+                data["start_date"],
+                data["start_date"],  # first next_run_date == start_date
+                1,
+                g.current_user["username"],
+                now_iso(),
+            ),
+        )
+        db.commit()
+        return redirect(url_for("staff_recurring_list"))
+
+    today_iso = date.today().isoformat()
+    form = {
+        "interval_value": "1",
+        "interval_unit": "week",
+        "start_date": today_iso,
+        "priority": "normal",
+    }
+    return render_template(
+        "recurring_form.html",
+        schedule=None,
+        form=form,
+        errors=[],
+        priorities=PRIORITIES,
+    )
+
+
+@app.route("/staff/recurring/<int:recurring_id>", methods=["GET", "POST"])
+@login_required
+def staff_recurring_edit(recurring_id):
+    db = get_db()
+    schedule = db.execute(
+        "SELECT * FROM recurring_tickets WHERE id = ?", (recurring_id,)
+    ).fetchone()
+    if schedule is None:
+        abort(404)
+
+    if request.method == "POST":
+        data, errors = _parse_recurring_form(request.form)
+        if errors:
+            return (
+                render_template(
+                    "recurring_form.html",
+                    schedule=schedule,
+                    form=request.form,
+                    errors=errors,
+                    priorities=PRIORITIES,
+                ),
+                400,
+            )
+        # Reset next_run_date to new start_date if start_date changed.
+        if data["start_date"] != schedule["start_date"]:
+            new_next_run = data["start_date"]
+        else:
+            new_next_run = schedule["next_run_date"]
+        db.execute(
+            """
+            UPDATE recurring_tickets
+            SET subject=?, description=?, priority=?, assigned_to=?,
+                interval_value=?, interval_unit=?, start_date=?, next_run_date=?,
+                active=?
+            WHERE id=?
+            """,
+            (
+                data["subject"],
+                data["description"],
+                data["priority"],
+                data["assigned_to"],
+                data["interval_value"],
+                data["interval_unit"],
+                data["start_date"],
+                new_next_run,
+                data["active"],
+                recurring_id,
+            ),
+        )
+        db.commit()
+        return redirect(url_for("staff_recurring_list"))
+
+    form = {
+        "subject": schedule["subject"],
+        "description": schedule["description"],
+        "priority": schedule["priority"],
+        "assigned_to": schedule["assigned_to"] or "",
+        "interval_value": schedule["interval_value"],
+        "interval_unit": schedule["interval_unit"],
+        "start_date": schedule["start_date"],
+        "active": schedule["active"],
+    }
+    return render_template(
+        "recurring_form.html",
+        schedule=schedule,
+        form=form,
+        errors=[],
+        priorities=PRIORITIES,
+    )
+
+
+@app.route("/staff/recurring/<int:recurring_id>/toggle", methods=["POST"])
+@login_required
+def staff_recurring_toggle(recurring_id):
+    db = get_db()
+    row = db.execute(
+        "SELECT active FROM recurring_tickets WHERE id = ?", (recurring_id,)
+    ).fetchone()
+    if row is None:
+        abort(404)
+    db.execute(
+        "UPDATE recurring_tickets SET active = ? WHERE id = ?",
+        (0 if row["active"] else 1, recurring_id),
+    )
+    db.commit()
+    return redirect(url_for("staff_recurring_list"))
+
+
+@app.route("/staff/recurring/<int:recurring_id>/delete", methods=["POST"])
+@login_required
+def staff_recurring_delete(recurring_id):
+    db = get_db()
+    db.execute("DELETE FROM recurring_tickets WHERE id = ?", (recurring_id,))
+    db.commit()
+    return redirect(url_for("staff_recurring_list"))
+
+
+@app.route("/staff/recurring/<int:recurring_id>/run", methods=["POST"])
+@login_required
+def staff_recurring_run_now(recurring_id):
+    """Generate a ticket from this schedule immediately (out-of-band)."""
+    db = get_db()
+    schedule = db.execute(
+        "SELECT * FROM recurring_tickets WHERE id = ?", (recurring_id,)
+    ).fetchone()
+    if schedule is None:
+        abort(404)
+    now = now_iso()
+    db.execute(
+        """
+        INSERT INTO tickets (submitter_name, submitter_email, subject, description,
+                             status, priority, assigned_to, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?)
+        """,
+        (
+            "[Recurring - manual]",
+            "noreply@helpdesk.local",
+            schedule["subject"],
+            schedule["description"],
+            schedule["priority"],
+            schedule["assigned_to"],
+            now,
+            now,
+        ),
+    )
+    db.execute(
+        "UPDATE recurring_tickets SET last_generated_at = ? WHERE id = ?",
+        (now, recurring_id),
+    )
+    db.commit()
+    return redirect(url_for("staff_recurring_list"))
+
+
 @app.route("/staff/ticket/<int:ticket_id>", methods=["GET", "POST"])
 @login_required
 def staff_ticket(ticket_id):
@@ -736,6 +1176,15 @@ def cli_delete_user(argv):
     return 0
 
 
+def cli_run_scheduler(argv):
+    """Manually generate any due recurring tickets (hook for Task Scheduler)."""
+    init_db()
+    with app.app_context():
+        count = generate_due_tickets()
+    print(f"Generated {count} ticket(s).")
+    return 0
+
+
 def cli_help(argv):
     print(
         "Usage:\n"
@@ -743,6 +1192,7 @@ def cli_help(argv):
         "  python app.py create-user [name] Create a new staff user (prompts for password)\n"
         "  python app.py list-users         List staff users\n"
         "  python app.py delete-user <name> Delete a staff user\n"
+        "  python app.py run-scheduler      Generate any due recurring tickets and exit\n"
     )
     return 0
 
@@ -751,6 +1201,7 @@ COMMANDS = {
     "create-user": cli_create_user,
     "list-users": cli_list_users,
     "delete-user": cli_delete_user,
+    "run-scheduler": cli_run_scheduler,
     "help": cli_help,
     "--help": cli_help,
     "-h": cli_help,
@@ -761,4 +1212,5 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] in COMMANDS:
         sys.exit(COMMANDS[sys.argv[1]](sys.argv[2:]))
     init_db()
+    start_scheduler()
     app.run(host="0.0.0.0", port=5000, debug=False)

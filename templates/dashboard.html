@@ -87,6 +87,7 @@
           {% set is_today = day == today %}
           {% set iso = day.isoformat() %}
           {% set day_events = events_by_date.get(iso, []) %}
+          {% set day_recurring = recurring_by_date.get(iso, []) %}
           <td class="cal-cell{% if not in_month %} other-month{% endif %}{% if is_today %} today{% endif %}">
             <div class="cal-day-head">
               <span class="cal-day-num">{{ day.day }}</span>
@@ -94,13 +95,20 @@
                 <a class="cal-add" href="{{ url_for('staff_event_new', date=iso) }}" title="Add event on {{ iso }}">+</a>
               {% endif %}
             </div>
-            {% if day_events %}
+            {% if day_events or day_recurring %}
             <ul class="cal-events">
               {% for e in day_events %}
               <li>
                 <a href="{{ url_for('staff_event_edit', event_id=e.id) }}" title="{{ e.notes or e.title }}">
                   {% if e.event_time %}<span class="event-time">{{ e.event_time }}</span>{% endif %}
                   <span class="event-title">{{ e.title }}</span>
+                </a>
+              </li>
+              {% endfor %}
+              {% for r in day_recurring %}
+              <li class="recurring">
+                <a href="{{ url_for('staff_recurring_edit', recurring_id=r.recurring_id) }}" title="Recurring schedule: {{ r.title }}">
+                  <span class="event-title">&#x21bb; {{ r.title }}</span>
                 </a>
               </li>
               {% endfor %}

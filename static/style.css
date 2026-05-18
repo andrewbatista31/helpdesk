@@ -400,6 +400,88 @@ table.calendar th {
   margin-right: .25rem;
   font-variant-numeric: tabular-nums;
 }
+.cal-events li.recurring a {
+  background: #fef3c7;
+  border-left-color: #f59e0b;
+  color: #78350f;
+}
+.cal-events li.recurring a:hover { background: #fde68a; }
+
+/* --- Recurring schedules --- */
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .75rem;
+  margin-bottom: .5rem;
+}
+.page-header h1 { margin: 0; }
+
+table.recurring-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  margin-top: 1rem;
+}
+table.recurring-table th,
+table.recurring-table td {
+  padding: .6rem .8rem;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+  vertical-align: top;
+}
+table.recurring-table th {
+  background: #f3f4f6;
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #4b5563;
+}
+table.recurring-table tr:last-child td { border-bottom: 0; }
+table.recurring-table tr.inactive { color: #9ca3af; background: #fafafa; }
+table.recurring-table tr.inactive a { color: #6b7280; }
+.recurring-meta { font-size: .8rem; color: #6b7280; margin-top: .15rem; }
+.badge.active { background: #d1fae5; color: #065f46; }
+
+.actions { white-space: nowrap; }
+.actions form.inline { display: inline; margin: 0; }
+.actions button.link {
+  background: none;
+  border: 0;
+  color: #2563eb;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  padding: 0 .35rem;
+}
+.actions button.link:hover { color: #1d4ed8; }
+
+fieldset.interval-fieldset {
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: .5rem 1rem;
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+  max-width: 520px;
+  margin: .65rem 0;
+}
+fieldset.interval-fieldset legend {
+  font-weight: 600;
+  color: #374151;
+  padding: 0 .3rem;
+  font-size: .85rem;
+}
+fieldset.interval-fieldset input[type=number] {
+  width: 5em;
+  margin: 0;
+}
+fieldset.interval-fieldset select { width: auto; margin: 0; }
+fieldset.interval-fieldset span { color: #4b5563; }
 
 /* --- Event form --- */
 

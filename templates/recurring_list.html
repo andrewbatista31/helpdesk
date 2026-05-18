@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Recurring schedules{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Recurring schedules</h1>
+  <a href="{{ url_for('staff_recurring_new') }}" class="btn primary">+ New schedule</a>
+</div>
+
+<p class="hint">
+  Each active schedule auto-generates a ticket at its interval. Paused
+  schedules don't generate anything but are kept for reference.
+</p>
+
+{% if schedules %}
+<table class="recurring-table">
+  <thead>
+    <tr>
+      <th>Subject</th>
+      <th>Schedule</th>
+      <th>Next run</th>
+      <th>Last generated</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in schedules %}
+    <tr class="{% if not s.active %}inactive{% endif %}">
+      <td>
+        <a href="{{ url_for('staff_recurring_edit', recurring_id=s.id) }}">{{ s.subject }}</a>
+        <div class="recurring-meta">
+          <span class="prio prio-{{ s.priority }}">{{ s.priority }}</span>
+          {% if s.assigned_to %} &middot; assigned to {{ s.assigned_to }}{% endif %}
+        </div>
+      </td>
+      <td>{{ s.schedule_text }}</td>
+      <td>
+        {{ s.next_run_date }}
+        {% if s.active and s.days_until_next is not none %}
+          {% if s.days_until_next <= 0 %}<span class="hint">(today)</span>
+          {% elif s.days_until_next == 1 %}<span class="hint">(tomorrow)</span>
+          {% else %}<span class="hint">(in {{ s.days_until_next }}d)</span>
+          {% endif %}
+        {% endif %}
+      </td>
+      <td>{{ s.last_generated_at or '—' }}</td>
+      <td>
+        {% if s.active %}<span class="badge active">Active</span>
+        {% else %}<span class="badge">Paused</span>
+        {% endif %}
+      </td>
+      <td class="actions">
+        <form method="post" action="{{ url_for('staff_recurring_toggle', recurring_id=s.id) }}" class="inline">
+          <button type="submit" class="link">{% if s.active %}Pause{% else %}Resume{% endif %}</button>
+        </form>
+        <form method="post" action="{{ url_for('staff_recurring_run_now', recurring_id=s.id) }}" class="inline">
+          <button type="submit" class="link">Run now</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">
+  No recurring schedules yet.
+  <a href="{{ url_for('staff_recurring_new') }}">Create one</a> to automate
+  things like weekly backup checks or monthly patch nights.
+</p>
+{% endif %}
+{% endblock %}
