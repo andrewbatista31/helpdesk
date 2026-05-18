@@ -12,6 +12,7 @@
     {% if g.current_user %}
     <a href="{{ url_for('staff_dashboard') }}">Dashboard</a>
     <a href="{{ url_for('staff_queue') }}">Queue</a>
+    <a href="{{ url_for('staff_calendar') }}">Calendar</a>
     {% else %}
     <a href="{{ url_for('staff_dashboard') }}">Staff</a>
     {% endif %}

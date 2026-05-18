@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{% if event %}Edit event{% else %}New event{% endif %}{% endblock %}
+{% block content %}
+<p class="back"><a href="{{ url_for('staff_calendar', month=back_month) }}">&larr; Back to calendar</a></p>
+
+<h1>{% if event %}Edit event{% else %}New event{% endif %}</h1>
+
+{% if errors %}
+<ul class="errors">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+{% endif %}
+
+<form method="post" class="stacked event-form">
+  <label>Date
+    <input type="date" name="event_date" value="{{ form.event_date or '' }}" required>
+  </label>
+  <label>Time <span class="hint">(optional, 24-hour)</span>
+    <input type="time" name="event_time" value="{{ form.event_time or '' }}">
+  </label>
+  <label>Title
+    <input name="title" value="{{ form.title or '' }}" maxlength="200" required autofocus>
+  </label>
+  <label>Notes <span class="hint">(optional)</span>
+    <textarea name="notes" rows="3">{{ form.notes or '' }}</textarea>
+  </label>
+  <button type="submit">{% if event %}Save changes{% else %}Create event{% endif %}</button>
+</form>
+
+{% if event %}
+<form method="post"
+      action="{{ url_for('staff_event_delete', event_id=event.id) }}"
+      class="delete-form"
+      onsubmit="return confirm('Delete this event? This cannot be undone.');">
+  <button type="submit" class="danger">Delete event</button>
+  <span class="created-meta">Added by <strong>{{ event.created_by }}</strong> on {{ event.created_at }}</span>
+</form>
+{% endif %}
+{% endblock %}

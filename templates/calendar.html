@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ month_name }} {{ year }} — Calendar{% endblock %}
+{% block content %}
+<div class="cal-header">
+  <h1>{{ month_name }} {{ year }}</h1>
+  <nav class="cal-nav">
+    <a href="?month={{ prev_month }}" class="btn">&larr; Prev</a>
+    <a href="{{ url_for('staff_calendar') }}" class="btn">Today</a>
+    <a href="?month={{ next_month }}" class="btn">Next &rarr;</a>
+    <a href="{{ url_for('staff_event_new', date=today.isoformat()) }}" class="btn primary">+ New event</a>
+  </nav>
+</div>
+
+<table class="calendar">
+  <thead>
+    <tr>{% for d in day_labels %}<th>{{ d }}</th>{% endfor %}</tr>
+  </thead>
+  <tbody>
+    {% for week in weeks %}
+    <tr>
+      {% for day in week %}
+        {% set in_month = day.month == month %}
+        {% set is_today = day == today %}
+        {% set iso = day.isoformat() %}
+        {% set day_events = events_by_date.get(iso, []) %}
+        <td class="cal-cell{% if not in_month %} other-month{% endif %}{% if is_today %} today{% endif %}">
+          <div class="cal-day-head">
+            <span class="cal-day-num">{{ day.day }}</span>
+            {% if in_month %}
+              <a class="cal-add" href="{{ url_for('staff_event_new', date=iso) }}" title="Add event on {{ iso }}">+</a>
+            {% endif %}
+          </div>
+          {% if day_events %}
+          <ul class="cal-events">
+            {% for e in day_events %}
+            <li>
+              <a href="{{ url_for('staff_event_edit', event_id=e.id) }}" title="{{ e.notes or e.title }}">
+                {% if e.event_time %}<span class="event-time">{{ e.event_time }}</span>{% endif %}
+                <span class="event-title">{{ e.title }}</span>
+              </a>
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

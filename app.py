@@ -5,7 +5,8 @@ import sys
 import secrets
 import getpass
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, date
+import calendar as cal_mod
 from pathlib import Path
 
 import bcrypt
@@ -87,6 +88,17 @@ def init_db():
         );
         CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
         CREATE INDEX IF NOT EXISTS idx_comments_ticket ON comments(ticket_id);
+
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_date TEXT NOT NULL,    -- 'YYYY-MM-DD'
+            event_time TEXT,             -- 'HH:MM' or NULL
+            title TEXT NOT NULL,
+            notes TEXT,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date);
         """
     )
     conn.commit()
@@ -348,6 +360,230 @@ def staff_queue():
         statuses=STATUSES,
         priorities=PRIORITIES,
     )
+
+
+# ---------------------------------------------------------------------------
+# Calendar + events
+# ---------------------------------------------------------------------------
+
+
+def _parse_month_arg(s):
+    """Parse a ?month=YYYY-MM string; fall back to current month on bad input."""
+    if s:
+        try:
+            y, m = s.split("-")
+            y, m = int(y), int(m)
+            if 1900 <= y <= 2100 and 1 <= m <= 12:
+                return y, m
+        except (ValueError, AttributeError):
+            pass
+    today = date.today()
+    return today.year, today.month
+
+
+def _shift_month(year, month, delta):
+    idx = year * 12 + (month - 1) + delta
+    return idx // 12, (idx % 12) + 1
+
+
+def _month_str(year, month):
+    return f"{year:04d}-{month:02d}"
+
+
+def _parse_event_form(form):
+    event_date = (form.get("event_date") or "").strip()
+    event_time = (form.get("event_time") or "").strip()
+    title = (form.get("title") or "").strip()
+    notes = (form.get("notes") or "").strip() or None
+    errors = []
+    try:
+        date.fromisoformat(event_date)
+    except ValueError:
+        errors.append("Date is required (YYYY-MM-DD).")
+    if event_time:
+        try:
+            datetime.strptime(event_time, "%H:%M")
+        except ValueError:
+            errors.append("Time must be HH:MM (24-hour).")
+    else:
+        event_time = None
+    if not title:
+        errors.append("Title is required.")
+    if len(title) > 200:
+        errors.append("Title must be 200 characters or fewer.")
+    return event_date, event_time, title, notes, errors
+
+
+@app.route("/staff/calendar")
+@login_required
+def staff_calendar():
+    year, month = _parse_month_arg(request.args.get("month"))
+    today = date.today()
+
+    cal = cal_mod.Calendar(firstweekday=6)  # Sunday-first
+    weeks = cal.monthdatescalendar(year, month)
+    first_day = weeks[0][0]
+    last_day = weeks[-1][-1]
+
+    rows = get_db().execute(
+        """
+        SELECT * FROM events
+        WHERE event_date BETWEEN ? AND ?
+        ORDER BY event_date,
+                 CASE WHEN event_time IS NULL THEN 1 ELSE 0 END,
+                 event_time,
+                 id
+        """,
+        (first_day.isoformat(), last_day.isoformat()),
+    ).fetchall()
+
+    events_by_date = {}
+    for r in rows:
+        events_by_date.setdefault(r["event_date"], []).append(r)
+
+    prev_y, prev_m = _shift_month(year, month, -1)
+    next_y, next_m = _shift_month(year, month, 1)
+
+    return render_template(
+        "calendar.html",
+        weeks=weeks,
+        year=year,
+        month=month,
+        month_name=cal_mod.month_name[month],
+        events_by_date=events_by_date,
+        today=today,
+        current_month=_month_str(year, month),
+        prev_month=_month_str(prev_y, prev_m),
+        next_month=_month_str(next_y, next_m),
+        day_labels=["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+    )
+
+
+@app.route("/staff/calendar/event/new", methods=["GET", "POST"])
+@login_required
+def staff_event_new():
+    if request.method == "POST":
+        event_date, event_time, title, notes, errors = _parse_event_form(request.form)
+        if errors:
+            back_month = _back_month_from(request.form.get("event_date"))
+            return (
+                render_template(
+                    "event_form.html",
+                    event=None,
+                    form=request.form,
+                    errors=errors,
+                    back_month=back_month,
+                ),
+                400,
+            )
+        db = get_db()
+        db.execute(
+            """
+            INSERT INTO events (event_date, event_time, title, notes, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_date,
+                event_time,
+                title,
+                notes,
+                g.current_user["username"],
+                now_iso(),
+            ),
+        )
+        db.commit()
+        y, m, _ = event_date.split("-")
+        return redirect(url_for("staff_calendar", month=f"{y}-{m}"))
+
+    prefill_date = request.args.get("date") or date.today().isoformat()
+    try:
+        date.fromisoformat(prefill_date)
+    except ValueError:
+        prefill_date = date.today().isoformat()
+    form = {"event_date": prefill_date}
+    back_month = _back_month_from(prefill_date)
+    return render_template(
+        "event_form.html",
+        event=None,
+        form=form,
+        errors=[],
+        back_month=back_month,
+    )
+
+
+@app.route("/staff/calendar/event/<int:event_id>", methods=["GET", "POST"])
+@login_required
+def staff_event_edit(event_id):
+    db = get_db()
+    event = db.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone()
+    if event is None:
+        abort(404)
+
+    if request.method == "POST":
+        event_date, event_time, title, notes, errors = _parse_event_form(request.form)
+        if errors:
+            back_month = _back_month_from(event["event_date"])
+            return (
+                render_template(
+                    "event_form.html",
+                    event=event,
+                    form=request.form,
+                    errors=errors,
+                    back_month=back_month,
+                ),
+                400,
+            )
+        db.execute(
+            """
+            UPDATE events
+            SET event_date = ?, event_time = ?, title = ?, notes = ?
+            WHERE id = ?
+            """,
+            (event_date, event_time, title, notes, event_id),
+        )
+        db.commit()
+        y, m, _ = event_date.split("-")
+        return redirect(url_for("staff_calendar", month=f"{y}-{m}"))
+
+    form = {
+        "event_date": event["event_date"],
+        "event_time": event["event_time"] or "",
+        "title": event["title"],
+        "notes": event["notes"] or "",
+    }
+    back_month = _back_month_from(event["event_date"])
+    return render_template(
+        "event_form.html",
+        event=event,
+        form=form,
+        errors=[],
+        back_month=back_month,
+    )
+
+
+@app.route("/staff/calendar/event/<int:event_id>/delete", methods=["POST"])
+@login_required
+def staff_event_delete(event_id):
+    db = get_db()
+    event = db.execute(
+        "SELECT event_date FROM events WHERE id = ?", (event_id,)
+    ).fetchone()
+    if event is None:
+        abort(404)
+    db.execute("DELETE FROM events WHERE id = ?", (event_id,))
+    db.commit()
+    y, m, _ = event["event_date"].split("-")
+    return redirect(url_for("staff_calendar", month=f"{y}-{m}"))
+
+
+def _back_month_from(date_str):
+    """Best-effort: derive a YYYY-MM string to send users back to."""
+    try:
+        d = date.fromisoformat(date_str)
+        return _month_str(d.year, d.month)
+    except (ValueError, TypeError, AttributeError):
+        today = date.today()
+        return _month_str(today.year, today.month)
 
 
 @app.route("/staff/ticket/<int:ticket_id>", methods=["GET", "POST"])
