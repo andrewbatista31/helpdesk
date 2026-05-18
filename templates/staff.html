@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Staff dashboard{% endblock %}
+{% block content %}
+<h1>Tickets</h1>
+
+<nav class="filters">
+  <a href="?status=active" class="{% if status_filter == 'active' %}active{% endif %}">Active</a>
+  {% for s in statuses %}
+    <a href="?status={{ s }}" class="{% if status_filter == s %}active{% endif %}">{{ s }}</a>
+  {% endfor %}
+  <a href="?status=all" class="{% if status_filter == 'all' %}active{% endif %}">All</a>
+</nav>
+
+{% if tickets %}
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Priority</th>
+      <th>Status</th>
+      <th>Subject</th>
+      <th>Submitter</th>
+      <th>Assigned</th>
+      <th>Updated</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for t in tickets %}
+    <tr onclick="location.href='{{ url_for('staff_ticket', ticket_id=t.id) }}'">
+      <td>{{ t.id }}</td>
+      <td class="prio prio-{{ t.priority }}">{{ t.priority }}</td>
+      <td>{{ t.status }}</td>
+      <td>{{ t.subject }}</td>
+      <td>{{ t.submitter_name }}</td>
+      <td>{{ t.assigned_to or '—' }}</td>
+      <td>{{ t.updated_at }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No tickets match this filter.</p>
+{% endif %}
+{% endblock %}

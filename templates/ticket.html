@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Ticket #{{ ticket.id }}{% endblock %}
+{% block content %}
+<p class="back"><a href="{{ url_for('staff_dashboard') }}">&larr; Back to dashboard</a></p>
+
+<h1>#{{ ticket.id }} &middot; {{ ticket.subject }}</h1>
+
+<dl class="meta">
+  <dt>From</dt><dd>{{ ticket.submitter_name }} &lt;{{ ticket.submitter_email }}&gt;</dd>
+  <dt>Status</dt><dd>{{ ticket.status }}</dd>
+  <dt>Priority</dt><dd class="prio prio-{{ ticket.priority }}">{{ ticket.priority }}</dd>
+  <dt>Assigned</dt><dd>{{ ticket.assigned_to or '—' }}</dd>
+  <dt>Created</dt><dd>{{ ticket.created_at }}</dd>
+  <dt>Updated</dt><dd>{{ ticket.updated_at }}</dd>
+</dl>
+
+<section class="description">
+  <h2>Description</h2>
+  <pre>{{ ticket.description }}</pre>
+</section>
+
+<form method="post" class="update-form">
+  <input type="hidden" name="action" value="update">
+  <label>Status
+    <select name="status">
+      {% for s in statuses %}
+        <option value="{{ s }}" {% if s == ticket.status %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Priority
+    <select name="priority">
+      {% for p in priorities %}
+        <option value="{{ p }}" {% if p == ticket.priority %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Assigned to
+    <input name="assigned_to" value="{{ ticket.assigned_to or '' }}" placeholder="staff name">
+  </label>
+  <button type="submit">Update</button>
+</form>
+
+<h2>Comments</h2>
+{% for c in comments %}
+  <article class="comment {% if c.internal %}internal{% endif %}">
+    <header>{{ c.author }} &middot; {{ c.created_at }}{% if c.internal %} &middot; <em>internal note</em>{% endif %}</header>
+    <pre>{{ c.body }}</pre>
+  </article>
+{% else %}
+  <p class="empty">No comments yet.</p>
+{% endfor %}
+
+<form method="post" class="comment-form">
+  <input type="hidden" name="action" value="comment">
+  <label>Your name
+    <input name="author" placeholder="staff name">
+  </label>
+  <label>Comment
+    <textarea name="body" rows="4" required></textarea>
+  </label>
+  <label class="inline">
+    <input type="checkbox" name="internal" value="1">
+    Internal note (not visible to submitter)
+  </label>
+  <button type="submit">Add comment</button>
+</form>
+{% endblock %}

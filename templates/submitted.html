@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Ticket #{{ ticket_id }} submitted{% endblock %}
+{% block content %}
+<h1>Thanks — ticket #{{ ticket_id }} created</h1>
+<p>IT will follow up by email. Keep the ticket number for reference.</p>
+<p><a href="{{ url_for('submit') }}">Submit another ticket</a></p>
+{% endblock %}
