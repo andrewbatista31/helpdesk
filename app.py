@@ -118,6 +118,24 @@ def init_db():
             last_generated_at TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_recurring_next ON recurring_tickets(next_run_date) WHERE active = 1;
+
+        CREATE TABLE IF NOT EXISTS licenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            vendor TEXT,
+            seats_total INTEGER NOT NULL DEFAULT 1,
+            seats_used INTEGER NOT NULL DEFAULT 0,
+            renewal_date TEXT,        -- 'YYYY-MM-DD' or NULL
+            purchase_date TEXT,       -- 'YYYY-MM-DD' or NULL
+            annual_cost REAL,         -- optional currency amount
+            license_key TEXT,         -- sensitive; masked in list views
+            assigned_to TEXT,         -- free-text owner / department
+            notes TEXT,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_licenses_renewal ON licenses(renewal_date);
         """
     )
     conn.commit()
@@ -1034,6 +1052,264 @@ def staff_recurring_run_now(recurring_id):
     )
     db.commit()
     return redirect(url_for("staff_recurring_list"))
+
+
+# ---------------------------------------------------------------------------
+# Software licenses
+# ---------------------------------------------------------------------------
+
+LICENSE_EXPIRING_DAYS = 30
+
+
+def _license_status(renewal_date_str):
+    """Return 'expired' | 'expiring' | 'active' | None (no renewal set)."""
+    if not renewal_date_str:
+        return None
+    try:
+        d = date.fromisoformat(renewal_date_str)
+    except ValueError:
+        return None
+    today = date.today()
+    if d < today:
+        return "expired"
+    if (d - today).days <= LICENSE_EXPIRING_DAYS:
+        return "expiring"
+    return "active"
+
+
+def _mask_license_key(key):
+    """Show only the last 4 characters; the rest becomes dots."""
+    if not key:
+        return ""
+    if len(key) <= 4:
+        return "•" * len(key)
+    return "•" * (len(key) - 4) + key[-4:]
+
+
+def _parse_license_form(form):
+    name = (form.get("name") or "").strip()
+    vendor = (form.get("vendor") or "").strip() or None
+    seats_total_raw = (form.get("seats_total") or "").strip()
+    seats_used_raw = (form.get("seats_used") or "").strip()
+    renewal_date = (form.get("renewal_date") or "").strip()
+    purchase_date = (form.get("purchase_date") or "").strip()
+    annual_cost_raw = (form.get("annual_cost") or "").strip()
+    license_key = (form.get("license_key") or "").strip() or None
+    assigned_to = (form.get("assigned_to") or "").strip() or None
+    notes = (form.get("notes") or "").strip() or None
+
+    errors = []
+    if not name:
+        errors.append("Name is required.")
+    if len(name) > 200:
+        errors.append("Name must be 200 characters or fewer.")
+
+    try:
+        seats_total = int(seats_total_raw)
+        if seats_total < 1:
+            raise ValueError
+    except ValueError:
+        seats_total = 1
+        errors.append("Seats total must be a whole number of 1 or greater.")
+
+    if seats_used_raw == "":
+        seats_used = 0
+    else:
+        try:
+            seats_used = int(seats_used_raw)
+            if seats_used < 0:
+                raise ValueError
+        except ValueError:
+            seats_used = 0
+            errors.append("Seats used must be zero or a positive whole number.")
+
+    if renewal_date:
+        try:
+            date.fromisoformat(renewal_date)
+        except ValueError:
+            errors.append("Renewal date must be a valid date.")
+    else:
+        renewal_date = None
+
+    if purchase_date:
+        try:
+            date.fromisoformat(purchase_date)
+        except ValueError:
+            errors.append("Purchase date must be a valid date.")
+    else:
+        purchase_date = None
+
+    if annual_cost_raw:
+        try:
+            annual_cost = float(annual_cost_raw)
+            if annual_cost < 0:
+                raise ValueError
+        except ValueError:
+            annual_cost = None
+            errors.append("Annual cost must be a positive number.")
+    else:
+        annual_cost = None
+
+    return (
+        {
+            "name": name,
+            "vendor": vendor,
+            "seats_total": seats_total,
+            "seats_used": seats_used,
+            "renewal_date": renewal_date,
+            "purchase_date": purchase_date,
+            "annual_cost": annual_cost,
+            "license_key": license_key,
+            "assigned_to": assigned_to,
+            "notes": notes,
+        },
+        errors,
+    )
+
+
+@app.route("/staff/licenses")
+@login_required
+def staff_licenses_list():
+    rows = get_db().execute(
+        """
+        SELECT * FROM licenses
+        ORDER BY
+          CASE WHEN renewal_date IS NULL THEN 1 ELSE 0 END,
+          renewal_date ASC,
+          name ASC
+        """
+    ).fetchall()
+    licenses = []
+    for r in rows:
+        d = dict(r)
+        d["status"] = _license_status(r["renewal_date"])
+        d["license_key_masked"] = _mask_license_key(r["license_key"])
+        licenses.append(d)
+    return render_template("licenses_list.html", licenses=licenses)
+
+
+@app.route("/staff/licenses/new", methods=["GET", "POST"])
+@login_required
+def staff_license_new():
+    if request.method == "POST":
+        data, errors = _parse_license_form(request.form)
+        if errors:
+            return (
+                render_template(
+                    "license_form.html",
+                    license=None,
+                    form=request.form,
+                    errors=errors,
+                ),
+                400,
+            )
+        now = now_iso()
+        get_db().execute(
+            """
+            INSERT INTO licenses (
+                name, vendor, seats_total, seats_used,
+                renewal_date, purchase_date, annual_cost,
+                license_key, assigned_to, notes,
+                created_by, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                data["name"],
+                data["vendor"],
+                data["seats_total"],
+                data["seats_used"],
+                data["renewal_date"],
+                data["purchase_date"],
+                data["annual_cost"],
+                data["license_key"],
+                data["assigned_to"],
+                data["notes"],
+                g.current_user["username"],
+                now,
+                now,
+            ),
+        )
+        get_db().commit()
+        return redirect(url_for("staff_licenses_list"))
+
+    form = {"seats_total": "1", "seats_used": "0"}
+    return render_template(
+        "license_form.html", license=None, form=form, errors=[]
+    )
+
+
+@app.route("/staff/licenses/<int:license_id>", methods=["GET", "POST"])
+@login_required
+def staff_license_edit(license_id):
+    db = get_db()
+    lic = db.execute(
+        "SELECT * FROM licenses WHERE id = ?", (license_id,)
+    ).fetchone()
+    if lic is None:
+        abort(404)
+
+    if request.method == "POST":
+        data, errors = _parse_license_form(request.form)
+        if errors:
+            return (
+                render_template(
+                    "license_form.html",
+                    license=lic,
+                    form=request.form,
+                    errors=errors,
+                ),
+                400,
+            )
+        db.execute(
+            """
+            UPDATE licenses
+            SET name=?, vendor=?, seats_total=?, seats_used=?,
+                renewal_date=?, purchase_date=?, annual_cost=?,
+                license_key=?, assigned_to=?, notes=?, updated_at=?
+            WHERE id=?
+            """,
+            (
+                data["name"],
+                data["vendor"],
+                data["seats_total"],
+                data["seats_used"],
+                data["renewal_date"],
+                data["purchase_date"],
+                data["annual_cost"],
+                data["license_key"],
+                data["assigned_to"],
+                data["notes"],
+                now_iso(),
+                license_id,
+            ),
+        )
+        db.commit()
+        return redirect(url_for("staff_licenses_list"))
+
+    form = {
+        "name": lic["name"],
+        "vendor": lic["vendor"] or "",
+        "seats_total": lic["seats_total"],
+        "seats_used": lic["seats_used"],
+        "renewal_date": lic["renewal_date"] or "",
+        "purchase_date": lic["purchase_date"] or "",
+        "annual_cost": "" if lic["annual_cost"] is None else lic["annual_cost"],
+        "license_key": lic["license_key"] or "",
+        "assigned_to": lic["assigned_to"] or "",
+        "notes": lic["notes"] or "",
+    }
+    return render_template(
+        "license_form.html", license=lic, form=form, errors=[]
+    )
+
+
+@app.route("/staff/licenses/<int:license_id>/delete", methods=["POST"])
+@login_required
+def staff_license_delete(license_id):
+    db = get_db()
+    db.execute("DELETE FROM licenses WHERE id = ?", (license_id,))
+    db.commit()
+    return redirect(url_for("staff_licenses_list"))
 
 
 @app.route("/staff/ticket/<int:ticket_id>", methods=["GET", "POST"])

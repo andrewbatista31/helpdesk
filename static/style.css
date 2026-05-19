@@ -33,6 +33,46 @@ header .logout button {
 }
 header .logout button:hover { background: #374151; }
 
+/* --- Header dropdown menu (hamburger) --- */
+header details.nav-menu { position: relative; }
+header details.nav-menu summary {
+  cursor: pointer;
+  color: #fff;
+  font-weight: 600;
+  list-style: none;
+  padding: 0;
+  user-select: none;
+}
+header details.nav-menu summary::-webkit-details-marker { display: none; }
+header details.nav-menu summary::marker { content: ""; }
+header details.nav-menu summary:hover { text-decoration: underline; }
+header details.nav-menu[open] summary { text-decoration: underline; }
+header details.nav-menu .menu-content {
+  position: absolute;
+  top: calc(100% + .6rem);
+  left: 0;
+  background: #fff;
+  color: #1f2937;
+  min-width: 220px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  box-shadow: 0 12px 30px rgba(0,0,0,.18);
+  padding: .35rem 0;
+  z-index: 20;
+}
+header details.nav-menu .menu-content a {
+  display: block;
+  color: #1f2937;
+  padding: .55rem 1rem;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: .9rem;
+}
+header details.nav-menu .menu-content a:hover {
+  background: #f3f4f6;
+  text-decoration: none;
+}
+
 main {
   max-width: 1100px;
   margin: 1.5rem auto;
@@ -482,6 +522,82 @@ fieldset.interval-fieldset input[type=number] {
 }
 fieldset.interval-fieldset select { width: auto; margin: 0; }
 fieldset.interval-fieldset span { color: #4b5563; }
+
+/* --- Software licenses --- */
+
+table.licenses-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  margin-top: 1rem;
+}
+table.licenses-table th,
+table.licenses-table td {
+  padding: .6rem .8rem;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+  vertical-align: middle;
+}
+table.licenses-table th {
+  background: #f3f4f6;
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #4b5563;
+}
+table.licenses-table tr:last-child td { border-bottom: 0; }
+table.licenses-table tbody tr { cursor: pointer; }
+table.licenses-table tbody tr:hover { background: #f9fafb; }
+table.licenses-table th.num, table.licenses-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.badge.expired   { background: #fee2e2; color: #991b1b; margin-left: .5rem; }
+.badge.expiring  { background: #fef3c7; color: #78350f; margin-left: .5rem; }
+
+.seats.full { color: #c2410c; font-weight: 600; }
+.seats.over { color: #b91c1c; font-weight: 700; }
+
+.key-masked {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .85rem;
+  color: #4b5563;
+  background: #f3f4f6;
+  padding: .1rem .4rem;
+  border-radius: 3px;
+}
+
+/* --- License form --- */
+
+.license-form { max-width: 640px; }
+.license-form .row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.license-form .row label { margin: .55rem 0 0; }
+.license-form .key-field {
+  display: flex;
+  gap: .5rem;
+  align-items: stretch;
+  margin-top: .25rem;
+}
+.license-form .key-field input { flex: 1; margin-top: 0; }
+.license-form .key-field button.link {
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  color: #1f2937;
+  padding: 0 .9rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 500;
+  font-size: .85rem;
+}
+.license-form .key-field button.link:hover { background: #f3f4f6; }
 
 /* --- Event form --- */
 

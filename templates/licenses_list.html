@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Software licenses{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Software licenses</h1>
+  <a href="{{ url_for('staff_license_new') }}" class="btn primary">+ New license</a>
+</div>
+
+<p class="hint">
+  Track what you own, who's using it, and when it renews. Licenses are
+  sorted by upcoming renewal date so anything expiring soon floats to the top.
+</p>
+
+{% if licenses %}
+<table class="licenses-table">
+  <thead>
+    <tr>
+      <th>Software</th>
+      <th>Vendor</th>
+      <th class="num">Seats</th>
+      <th>Renewal</th>
+      <th class="num">Annual cost</th>
+      <th>Assigned to</th>
+      <th>License key</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for l in licenses %}
+    <tr onclick="location.href='{{ url_for('staff_license_edit', license_id=l.id) }}'">
+      <td>
+        <strong>{{ l.name }}</strong>
+        {% if l.status == 'expired' %}<span class="badge expired">Expired</span>
+        {% elif l.status == 'expiring' %}<span class="badge expiring">Renews soon</span>
+        {% endif %}
+      </td>
+      <td>{{ l.vendor or '—' }}</td>
+      <td class="num">
+        <span class="seats {% if l.seats_used > l.seats_total %}over{% elif l.seats_used == l.seats_total %}full{% endif %}">
+          {{ l.seats_used }} / {{ l.seats_total }}
+        </span>
+      </td>
+      <td>{{ l.renewal_date or '—' }}</td>
+      <td class="num">
+        {% if l.annual_cost is not none %}${{ "%.2f"|format(l.annual_cost) }}{% else %}—{% endif %}
+      </td>
+      <td>{{ l.assigned_to or '—' }}</td>
+      <td><code class="key-masked">{{ l.license_key_masked or '—' }}</code></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">
+  No licenses tracked yet.
+  <a href="{{ url_for('staff_license_new') }}">Add one</a> to start
+  tracking renewals and seat utilization.
+</p>
+{% endif %}
+{% endblock %}

@@ -12,7 +12,13 @@
     {% if g.current_user %}
     <a href="{{ url_for('staff_dashboard') }}">Dashboard</a>
     <a href="{{ url_for('staff_queue') }}">Queue</a>
-    <a href="{{ url_for('staff_recurring_list') }}">Recurring</a>
+    <details class="nav-menu">
+      <summary aria-label="More">&#9776; More</summary>
+      <div class="menu-content" role="menu">
+        <a href="{{ url_for('staff_recurring_list') }}" role="menuitem">Recurring schedules</a>
+        <a href="{{ url_for('staff_licenses_list') }}" role="menuitem">Software licenses</a>
+      </div>
+    </details>
     {% else %}
     <a href="{{ url_for('staff_dashboard') }}">Staff</a>
     {% endif %}
@@ -27,5 +33,22 @@
     {% endif %}
   </header>
   <main>{% block content %}{% endblock %}</main>
+
+  <script>
+    // Close any open header dropdown when clicking outside of it.
+    document.addEventListener('click', function (e) {
+      document.querySelectorAll('details.nav-menu[open]').forEach(function (d) {
+        if (!d.contains(e.target)) d.removeAttribute('open');
+      });
+    });
+    // Esc closes any open dropdown too.
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('details.nav-menu[open]').forEach(function (d) {
+          d.removeAttribute('open');
+        });
+      }
+    });
+  </script>
 </body>
 </html>
