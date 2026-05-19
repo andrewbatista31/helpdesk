@@ -21,6 +21,7 @@ server.err
 # Secrets / local config
 .env
 .flask_secret
+.testing-notes.md
 instance/
 
 # Editor / OS
