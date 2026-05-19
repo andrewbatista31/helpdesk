@@ -71,7 +71,10 @@
       <a href="?month={{ prev_month }}#calendar" class="btn">&larr; Prev</a>
       <a href="{{ url_for('staff_dashboard') }}#calendar" class="btn">Today</a>
       <a href="?month={{ next_month }}#calendar" class="btn">Next &rarr;</a>
-      <a href="{{ url_for('staff_event_new', date=today.isoformat()) }}" class="btn primary">+ New event</a>
+      <a href="{{ url_for('staff_event_new', date=today.isoformat()) }}"
+         class="btn primary"
+         data-action="new-event"
+         data-date="{{ today.isoformat() }}">+ New event</a>
     </nav>
   </div>
 
@@ -92,14 +95,27 @@
             <div class="cal-day-head">
               <span class="cal-day-num">{{ day.day }}</span>
               {% if in_month %}
-                <a class="cal-add" href="{{ url_for('staff_event_new', date=iso) }}" title="Add event on {{ iso }}">+</a>
+                <a class="cal-add"
+                   href="{{ url_for('staff_event_new', date=iso) }}"
+                   data-action="new-event"
+                   data-date="{{ iso }}"
+                   title="Add event on {{ iso }}">+</a>
               {% endif %}
             </div>
             {% if day_events or day_recurring %}
             <ul class="cal-events">
               {% for e in day_events %}
               <li>
-                <a href="{{ url_for('staff_event_edit', event_id=e.id) }}" title="{{ e.notes or e.title }}">
+                <a href="{{ url_for('staff_event_edit', event_id=e.id) }}"
+                   data-action="edit-event"
+                   data-id="{{ e.id }}"
+                   data-date="{{ e.event_date }}"
+                   data-time="{{ e.event_time or '' }}"
+                   data-title="{{ e.title }}"
+                   data-notes="{{ e.notes or '' }}"
+                   data-created-by="{{ e.created_by }}"
+                   data-created-at="{{ e.created_at }}"
+                   title="{{ e.notes or e.title }}">
                   {% if e.event_time %}<span class="event-time">{{ e.event_time }}</span>{% endif %}
                   <span class="event-title">{{ e.title }}</span>
                 </a>
@@ -145,4 +161,122 @@
   <p class="empty">Nothing assigned to you right now.</p>
   {% endif %}
 </section>
+
+{# ---- Event modals (progressive enhancement; links above still work without JS) ---- #}
+
+<dialog id="new-event-dialog" class="modal" aria-labelledby="new-event-title">
+  <form method="post" action="{{ url_for('staff_event_new') }}" class="stacked event-form">
+    <h2 id="new-event-title">New event</h2>
+    <label>Date
+      <input type="date" name="event_date" required>
+    </label>
+    <label>Time <span class="hint">(optional, 24-hour)</span>
+      <input type="time" name="event_time">
+    </label>
+    <label>Title
+      <input name="title" maxlength="200" required>
+    </label>
+    <label>Notes <span class="hint">(optional)</span>
+      <textarea name="notes" rows="3"></textarea>
+    </label>
+    <div class="modal-actions">
+      <button type="submit">Create event</button>
+      <button type="button" class="link" data-close>Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="edit-event-dialog" class="modal" aria-labelledby="edit-event-title">
+  <form method="post" class="stacked event-form" id="edit-event-form">
+    <h2 id="edit-event-title">Edit event</h2>
+    <label>Date
+      <input type="date" name="event_date" required>
+    </label>
+    <label>Time <span class="hint">(optional, 24-hour)</span>
+      <input type="time" name="event_time">
+    </label>
+    <label>Title
+      <input name="title" maxlength="200" required>
+    </label>
+    <label>Notes <span class="hint">(optional)</span>
+      <textarea name="notes" rows="3"></textarea>
+    </label>
+    <p class="created-meta" id="edit-event-meta"></p>
+    <div class="modal-actions">
+      <button type="submit">Save changes</button>
+      <button type="button" class="link" data-close>Cancel</button>
+      <button type="button" class="danger" id="edit-event-delete-btn">Delete</button>
+    </div>
+  </form>
+  <form method="post" id="edit-event-delete-form" hidden></form>
+</dialog>
+
+<script>
+(function () {
+  var newDialog  = document.getElementById('new-event-dialog');
+  var editDialog = document.getElementById('edit-event-dialog');
+  // If <dialog> is unsupported, leave the original links alone — they still work.
+  if (!newDialog || !editDialog || typeof newDialog.showModal !== 'function') return;
+
+  var newForm           = newDialog.querySelector('form');
+  var editForm          = document.getElementById('edit-event-form');
+  var editMeta          = document.getElementById('edit-event-meta');
+  var editDeleteForm    = document.getElementById('edit-event-delete-form');
+  var editDeleteBtn     = document.getElementById('edit-event-delete-btn');
+
+  function todayISO() { return new Date().toISOString().slice(0, 10); }
+
+  // Event delegation: any element with data-action="new-event" or "edit-event"
+  document.body.addEventListener('click', function (e) {
+    var trigger = e.target.closest('[data-action]');
+    if (!trigger) return;
+    var action = trigger.dataset.action;
+
+    if (action === 'new-event') {
+      e.preventDefault();
+      newForm.reset();
+      newForm.querySelector('input[name=event_date]').value = trigger.dataset.date || todayISO();
+      newDialog.showModal();
+      setTimeout(function () { newForm.querySelector('input[name=title]').focus(); }, 50);
+    } else if (action === 'edit-event') {
+      e.preventDefault();
+      var id = trigger.dataset.id;
+      editForm.action = '/staff/calendar/event/' + id;
+      editForm.querySelector('input[name=event_date]').value = trigger.dataset.date;
+      editForm.querySelector('input[name=event_time]').value = trigger.dataset.time || '';
+      editForm.querySelector('input[name=title]').value      = trigger.dataset.title || '';
+      editForm.querySelector('textarea[name=notes]').value   = trigger.dataset.notes || '';
+      var meta = 'Added by ' + (trigger.dataset.createdBy || '?') +
+                 ' on ' + (trigger.dataset.createdAt || '?');
+      editMeta.textContent = meta;
+      editDeleteForm.action = '/staff/calendar/event/' + id + '/delete';
+      editDialog.showModal();
+    }
+  });
+
+  // Cancel buttons
+  document.querySelectorAll('[data-close]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var d = btn.closest('dialog');
+      if (d) d.close();
+    });
+  });
+
+  // Click outside the dialog content -> close
+  [newDialog, editDialog].forEach(function (d) {
+    d.addEventListener('click', function (e) {
+      if (e.target === d) d.close();
+    });
+  });
+
+  // Delete button submits the hidden delete form (after confirm)
+  if (editDeleteBtn) {
+    editDeleteBtn.addEventListener('click', function () {
+      if (confirm('Delete this event? This cannot be undone.')) {
+        editDeleteForm.submit();
+      }
+    });
+  }
+})();
+</script>
 {% endblock %}

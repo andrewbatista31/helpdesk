@@ -488,6 +488,69 @@ fieldset.interval-fieldset span { color: #4b5563; }
 .event-form { max-width: 520px; }
 .event-form .hint { font-weight: 400; color: #6b7280; font-size: .8rem; }
 
+/* --- Modal dialogs --- */
+
+dialog.modal {
+  border: 0;
+  border-radius: 8px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.25), 0 4px 12px rgba(0,0,0,.1);
+  padding: 1.25rem 1.5rem 1.1rem;
+  max-width: 520px;
+  width: calc(100% - 2rem);
+  color: inherit;
+  font: inherit;
+}
+dialog.modal::backdrop {
+  background: rgba(15, 23, 42, .45);
+  backdrop-filter: blur(2px);
+}
+dialog.modal h2 {
+  margin: 0 0 .75rem;
+  font-size: 1.1rem;
+  padding-bottom: .6rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+dialog.modal .event-form { max-width: 100%; }
+dialog.modal .event-form label { margin: .55rem 0; }
+dialog.modal .event-form input,
+dialog.modal .event-form textarea { max-width: 100%; }
+dialog.modal .created-meta {
+  font-size: .8rem;
+  color: #6b7280;
+  margin: .75rem 0 0;
+}
+
+.modal-actions {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  margin-top: 1rem;
+  padding-top: .75rem;
+  border-top: 1px solid #e5e7eb;
+}
+.modal-actions button.link {
+  background: transparent;
+  border: 0;
+  color: #4b5563;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 500;
+  padding: .4rem .5rem;
+}
+.modal-actions button.link:hover { color: #111827; text-decoration: underline; }
+.modal-actions button.danger {
+  margin-left: auto; /* push delete to the far right */
+  background: #fff;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+  padding: .45rem .9rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+.modal-actions button.danger:hover { background: #fee2e2; }
+
 .delete-form {
   margin-top: 1.5rem;
   padding-top: 1rem;
