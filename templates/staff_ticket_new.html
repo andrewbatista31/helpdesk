@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}New ticket{% endblock %}
+{% block content %}
+<h1>New ticket</h1>
+<p class="back"><a href="{{ url_for('staff_queue') }}">&larr; All tickets</a></p>
+
+{% if errors %}
+<div class="form-errors">
+  <strong>Could not create the ticket:</strong>
+  <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="post" class="stacked ticket-new-form">
+  <label>Subject
+    <input type="text" name="subject" maxlength="200" required
+           autofocus
+           value="{{ form.subject or '' }}"
+           placeholder="Short description (e.g., printer offline in Acct)">
+  </label>
+
+  <label>Description
+    <textarea name="description" rows="6" required
+              placeholder="What happened, what you did, what's next…">{{ form.description or '' }}</textarea>
+  </label>
+
+  <p class="defaults-summary">
+    Will be saved as
+    <span class="chip">priority: <strong>{{ form.priority or 'normal' }}</strong></span>
+    <span class="chip">status: <strong>{{ form.status or 'in_progress' }}</strong></span>
+    <span class="chip">assigned: <strong>{% if form.assigned_to and form.assigned_to != me %}{{ form.assigned_to }}{% else %}you{% endif %}</strong></span>
+  </p>
+
+  <details class="more-options">
+    <summary>&#9881; Change priority, status, or assignee</summary>
+    <div class="more-grid">
+      <label>Priority
+        <select name="priority">
+          {% for p in priorities %}
+          <option value="{{ p }}" {% if (form.priority or 'normal') == p %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Status
+        <select name="status">
+          {% for s in statuses %}
+          <option value="{{ s }}" {% if (form.status or 'in_progress') == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Assigned to
+        <input type="text" name="assigned_to" maxlength="100"
+               value="{{ form.assigned_to or me }}"
+               placeholder="username or blank for unassigned">
+      </label>
+    </div>
+  </details>
+
+  <div class="form-actions">
+    <button type="submit">Create ticket</button>
+    <a class="btn-secondary" href="{{ url_for('staff_queue') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}
