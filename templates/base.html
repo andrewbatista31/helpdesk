@@ -7,48 +7,42 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <header>
-    <a href="{{ url_for('submit') }}">Submit ticket</a>
+  <header class="site-header">
+    <div class="hdr-top">
+      <a class="hdr-brand" href="{{ url_for('staff_dashboard') if g.current_user else url_for('submit') }}">Helpdesk</a>
+      <span class="hdr-spacer"></span>
+      {% if g.current_user %}
+        <a class="hdr-cta" href="{{ url_for('staff_ticket_new') }}">+ New ticket</a>
+        <span class="hdr-who">Signed in as <strong>{{ g.current_user.username }}</strong></span>
+        <form method="post" action="{{ url_for('logout') }}" class="hdr-logout">
+          <button type="submit">Sign out</button>
+        </form>
+      {% else %}
+        <a class="hdr-link" href="{{ url_for('submit') }}">Submit ticket</a>
+        <a class="hdr-link" href="{{ url_for('login') }}">Staff sign in</a>
+      {% endif %}
+    </div>
     {% if g.current_user %}
-    <a href="{{ url_for('staff_dashboard') }}">Dashboard</a>
-    <a href="{{ url_for('staff_queue') }}">Queue</a>
-    <details class="nav-menu">
-      <summary aria-label="More">&#9776; More</summary>
-      <div class="menu-content" role="menu">
-        <a href="{{ url_for('staff_recurring_list') }}" role="menuitem">Recurring schedules</a>
-        <a href="{{ url_for('staff_licenses_list') }}" role="menuitem">Software licenses</a>
-      </div>
-    </details>
-    {% else %}
-    <a href="{{ url_for('staff_dashboard') }}">Staff</a>
-    {% endif %}
-    <span class="spacer"></span>
-    {% if g.current_user %}
-      <span class="who">Signed in as <strong>{{ g.current_user.username }}</strong></span>
-      <form method="post" action="{{ url_for('logout') }}" class="logout">
-        <button type="submit">Sign out</button>
-      </form>
-    {% else %}
-      <a href="{{ url_for('login') }}">Staff sign in</a>
+    {% set ep = request.endpoint %}
+    <nav class="hdr-nav">
+      <a href="{{ url_for('staff_dashboard') }}"
+         class="{% if ep == 'staff_dashboard' %}active{% endif %}">Dashboard</a>
+      <a href="{{ url_for('staff_queue') }}"
+         class="{% if ep in ('staff_queue', 'staff_ticket', 'staff_ticket_new') %}active{% endif %}">
+        Tickets
+        {% if open_ticket_count %}<span class="hdr-badge">{{ open_ticket_count }}</span>{% endif %}
+      </a>
+      <a href="{{ url_for('staff_licenses_list') }}"
+         class="{% if ep and ep.startswith('staff_license') %}active{% endif %}">Licenses</a>
+      <a href="{{ url_for('staff_recurring_list') }}"
+         class="{% if ep and ep.startswith('staff_recurring') %}active{% endif %}">Recurring</a>
+    </nav>
     {% endif %}
   </header>
   <main>{% block content %}{% endblock %}</main>
 
   <script>
-    // Close any open header dropdown when clicking outside of it.
-    document.addEventListener('click', function (e) {
-      document.querySelectorAll('details.nav-menu[open]').forEach(function (d) {
-        if (!d.contains(e.target)) d.removeAttribute('open');
-      });
-    });
-    // Esc closes any open dropdown too.
-    document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') {
-        document.querySelectorAll('details.nav-menu[open]').forEach(function (d) {
-          d.removeAttribute('open');
-        });
-      }
-    });
+    // (No dropdown to close anymore — keeping this empty hook for future use.)
   </script>
 </body>
 </html>

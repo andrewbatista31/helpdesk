@@ -201,6 +201,17 @@ def load_current_user():
     g.current_user = row
 
 
+@app.context_processor
+def inject_header_globals():
+    """Make open_ticket_count available to base.html on every staff page."""
+    if g.get("current_user") is None:
+        return {}
+    row = get_db().execute(
+        "SELECT COUNT(*) AS n FROM tickets WHERE status NOT IN ('resolved', 'closed')"
+    ).fetchone()
+    return {"open_ticket_count": row["n"] if row else 0}
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if g.get("current_user") is not None:
