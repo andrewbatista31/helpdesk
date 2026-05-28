@@ -20,7 +20,6 @@
       <th class="num">Seats</th>
       <th>Renewal</th>
       <th class="num">Annual cost</th>
-      <th>Assigned to</th>
       <th>License key</th>
     </tr>
   </thead>
@@ -43,7 +42,6 @@
       <td class="num">
         {% if l.annual_cost is not none %}${{ "%.2f"|format(l.annual_cost) }}{% else %}—{% endif %}
       </td>
-      <td>{{ l.assigned_to or '—' }}</td>
       <td><code class="key-masked">{{ l.license_key_masked or '—' }}</code></td>
     </tr>
     {% endfor %}

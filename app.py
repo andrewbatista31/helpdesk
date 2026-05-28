@@ -129,7 +129,6 @@ def init_db():
             purchase_date TEXT,       -- 'YYYY-MM-DD' or NULL
             annual_cost REAL,         -- optional currency amount
             license_key TEXT,         -- sensitive; masked in list views
-            assigned_to TEXT,         -- free-text owner / department
             notes TEXT,
             created_by TEXT NOT NULL,
             created_at TEXT NOT NULL,
@@ -138,6 +137,18 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_licenses_renewal ON licenses(renewal_date);
         """
     )
+
+    # --- Lightweight migrations for existing DBs --------------------------
+    # Each statement is wrapped so it's idempotent: it succeeds on the first
+    # run and is a no-op afterwards. Using sqlite3.OperationalError catches
+    # both "column already exists" and "no such column" cases.
+    for stmt in (
+        "ALTER TABLE licenses DROP COLUMN assigned_to",
+    ):
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
 
@@ -1095,7 +1106,6 @@ def _parse_license_form(form):
     purchase_date = (form.get("purchase_date") or "").strip()
     annual_cost_raw = (form.get("annual_cost") or "").strip()
     license_key = (form.get("license_key") or "").strip() or None
-    assigned_to = (form.get("assigned_to") or "").strip() or None
     notes = (form.get("notes") or "").strip() or None
 
     errors = []
@@ -1160,7 +1170,6 @@ def _parse_license_form(form):
             "purchase_date": purchase_date,
             "annual_cost": annual_cost,
             "license_key": license_key,
-            "assigned_to": assigned_to,
             "notes": notes,
         },
         errors,
@@ -1209,9 +1218,9 @@ def staff_license_new():
             INSERT INTO licenses (
                 name, vendor, seats_total, seats_used,
                 renewal_date, purchase_date, annual_cost,
-                license_key, assigned_to, notes,
+                license_key, notes,
                 created_by, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data["name"],
@@ -1222,7 +1231,6 @@ def staff_license_new():
                 data["purchase_date"],
                 data["annual_cost"],
                 data["license_key"],
-                data["assigned_to"],
                 data["notes"],
                 g.current_user["username"],
                 now,
@@ -1265,7 +1273,7 @@ def staff_license_edit(license_id):
             UPDATE licenses
             SET name=?, vendor=?, seats_total=?, seats_used=?,
                 renewal_date=?, purchase_date=?, annual_cost=?,
-                license_key=?, assigned_to=?, notes=?, updated_at=?
+                license_key=?, notes=?, updated_at=?
             WHERE id=?
             """,
             (
@@ -1277,7 +1285,6 @@ def staff_license_edit(license_id):
                 data["purchase_date"],
                 data["annual_cost"],
                 data["license_key"],
-                data["assigned_to"],
                 data["notes"],
                 now_iso(),
                 license_id,
@@ -1295,7 +1302,6 @@ def staff_license_edit(license_id):
         "purchase_date": lic["purchase_date"] or "",
         "annual_cost": "" if lic["annual_cost"] is None else lic["annual_cost"],
         "license_key": lic["license_key"] or "",
-        "assigned_to": lic["assigned_to"] or "",
         "notes": lic["notes"] or "",
     }
     return render_template(
