@@ -1,16 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Ticket queue{% endblock %}
+{% block title %}Tickets{% endblock %}
 {% block content %}
 <h1>Tickets</h1>
-
-{# Centralize current filter state so chips and status nav can build URLs uniformly. #}
-{% set current = {
-  'filter': filter_name,
-  'priority': priority_filter,
-  'assignee': assignee_filter,
-  'created_by': created_by_filter,
-  'resolved_by': resolved_by_filter,
-} %}
 
 {% macro queue_url(ov_status=none, ov_filter=none, ov_priority=none, ov_assignee=none, ov_created_by=none, ov_resolved_by=none) -%}
   {%- set s      = ov_status      if ov_status      is not none else status_filter -%}
