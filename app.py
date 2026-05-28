@@ -145,6 +145,8 @@ def init_db():
     for stmt in (
         "ALTER TABLE licenses DROP COLUMN assigned_to",
         "ALTER TABLE tickets ADD COLUMN created_by_staff TEXT",
+        "ALTER TABLE tickets ADD COLUMN resolved_at TEXT",
+        "ALTER TABLE tickets ADD COLUMN resolved_by TEXT",
     ):
         try:
             conn.execute(stmt)
