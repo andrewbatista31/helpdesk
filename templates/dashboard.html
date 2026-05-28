@@ -22,6 +22,48 @@
   </a>
 </div>
 
+<section class="team-activity panel">
+  <div class="team-head">
+    <h2>Team activity</h2>
+    <span class="ta-spacer"></span>
+    <span class="window-pills">
+      {% for w in team_windows %}
+        <a href="{{ url_for('staff_dashboard', window=w) }}"
+           class="{% if team_window == w %}active{% endif %}">
+          {{ {'7d':'7d','30d':'30d','mtd':'MTD','qtd':'QTD','all':'All time'}[w] }}
+        </a>
+      {% endfor %}
+    </span>
+  </div>
+  {% if team_rows %}
+  <table class="team-table">
+    <thead>
+      <tr>
+        <th>Staff member</th>
+        <th class="num">Created</th>
+        <th class="num">Assigned (open)</th>
+        <th class="num">Resolved</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in team_rows %}
+      <tr class="{% if r.username == me_username %}me{% endif %}">
+        <td class="name">
+          <a href="{{ url_for('staff_queue', assignee=r.username) }}">{{ r.username }}</a>
+          {% if r.username == me_username %}<span class="me-tag">YOU</span>{% endif %}
+        </td>
+        <td class="num"><a href="{{ url_for('staff_queue', status='all', created_by=r.username) }}">{{ r.created_count }}</a></td>
+        <td class="num"><a href="{{ url_for('staff_queue', status='active', assignee=r.username) }}">{{ r.assigned_open_count }}</a></td>
+        <td class="num"><a href="{{ url_for('staff_queue', status='resolved', resolved_by=r.username) }}">{{ r.resolved_count }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No staff users yet.</p>
+  {% endif %}
+</section>
+
 <div class="dash-grid">
   <section class="aging panel">
     <h2>Open more than {{ aging_threshold }} days

@@ -160,6 +160,25 @@ def now_iso():
     return datetime.utcnow().isoformat(timespec="seconds")
 
 
+TEAM_WINDOWS = ("7d", "30d", "mtd", "qtd", "all")
+
+
+def _team_activity_window_start(window):
+    """Return an ISO-8601 lower bound for the window, or None for 'all'."""
+    now = datetime.utcnow()
+    if window == "7d":
+        return (now - timedelta(days=7)).isoformat(timespec="seconds")
+    if window == "30d":
+        return (now - timedelta(days=30)).isoformat(timespec="seconds")
+    if window == "mtd":
+        return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
+    if window == "qtd":
+        # Calendar quarter: Jan/Apr/Jul/Oct
+        q_start_month = ((now.month - 1) // 3) * 3 + 1
+        return now.replace(month=q_start_month, day=1, hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
+    return None  # 'all'
+
+
 # ---------------------------------------------------------------------------
 # Authentication
 # ---------------------------------------------------------------------------
@@ -382,7 +401,47 @@ def staff_dashboard():
         my_tickets=my_tickets,
     )
     ctx.update(_calendar_context(request.args.get("month")))
-    return render_template("dashboard.html", **ctx)
+
+    # ---- Team activity widget --------------------------------------------
+    window = request.args.get("window")
+    if window in TEAM_WINDOWS:
+        session["team_activity_window"] = window
+    else:
+        window = session.get("team_activity_window", "mtd")
+    window_start = _team_activity_window_start(window)
+    me_username = g.current_user["username"]
+
+    team_rows = db.execute(
+        """
+        SELECT
+          u.username AS username,
+          (SELECT COUNT(*) FROM tickets t
+              WHERE LOWER(t.created_by_staff) = LOWER(u.username)
+                AND (? IS NULL OR t.created_at >= ?)
+          ) AS created_count,
+          (SELECT COUNT(*) FROM tickets t
+              WHERE LOWER(t.assigned_to) = LOWER(u.username)
+                AND t.status NOT IN ('resolved','closed')
+          ) AS assigned_open_count,
+          (SELECT COUNT(*) FROM tickets t
+              WHERE LOWER(t.resolved_by) = LOWER(u.username)
+                AND t.resolved_at IS NOT NULL
+                AND (? IS NULL OR t.resolved_at >= ?)
+          ) AS resolved_count
+        FROM users u
+        ORDER BY u.username COLLATE NOCASE
+        """,
+        (window_start, window_start, window_start, window_start),
+    ).fetchall()
+
+    return render_template(
+        "dashboard.html",
+        **ctx,
+        team_rows=team_rows,
+        team_window=window,
+        team_windows=TEAM_WINDOWS,
+        me_username=me_username,
+    )
 
 
 @app.route("/staff/tickets")
