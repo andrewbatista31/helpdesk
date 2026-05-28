@@ -1,26 +1,61 @@
 {% extends "base.html" %}
 {% block title %}Ticket queue{% endblock %}
 {% block content %}
-<h1>Queue</h1>
+<h1>Tickets</h1>
 
-{# preserve filter/priority across status switches #}
-{% set extra = '' %}
-{% if filter_name %}{% set extra = extra ~ '&filter=' ~ filter_name %}{% endif %}
-{% if priority_filter %}{% set extra = extra ~ '&priority=' ~ priority_filter %}{% endif %}
+{# Centralize current filter state so chips and status nav can build URLs uniformly. #}
+{% set current = {
+  'filter': filter_name,
+  'priority': priority_filter,
+  'assignee': assignee_filter,
+  'created_by': created_by_filter,
+  'resolved_by': resolved_by_filter,
+} %}
+
+{% macro queue_url(ov_status=none, ov_filter=none, ov_priority=none, ov_assignee=none, ov_created_by=none, ov_resolved_by=none) -%}
+  {%- set s      = ov_status      if ov_status      is not none else status_filter -%}
+  {%- set fil    = ov_filter      if ov_filter      is not none else filter_name -%}
+  {%- set pri    = ov_priority    if ov_priority    is not none else priority_filter -%}
+  {%- set asgn   = ov_assignee    if ov_assignee    is not none else assignee_filter -%}
+  {%- set crby   = ov_created_by  if ov_created_by  is not none else created_by_filter -%}
+  {%- set rsby   = ov_resolved_by if ov_resolved_by is not none else resolved_by_filter -%}
+  {{- url_for('staff_queue',
+       status=s,
+       filter=fil if fil else none,
+       priority=pri if pri else none,
+       assignee=asgn if asgn else none,
+       created_by=crby if crby else none,
+       resolved_by=rsby if rsby else none) -}}
+{%- endmacro %}
 
 <nav class="filters">
-  <a href="?status=active{{ extra }}" class="{% if status_filter == 'active' %}active{% endif %}">Active</a>
+  <a href="{{ queue_url(ov_status='active') }}" class="{% if status_filter == 'active' %}active{% endif %}">Active</a>
   {% for s in statuses %}
-    <a href="?status={{ s }}{{ extra }}" class="{% if status_filter == s %}active{% endif %}">{{ s }}</a>
+    <a href="{{ queue_url(ov_status=s) }}" class="{% if status_filter == s %}active{% endif %}">{{ s }}</a>
   {% endfor %}
-  <a href="?status=all{{ extra }}" class="{% if status_filter == 'all' %}active{% endif %}">All</a>
+  <a href="{{ queue_url(ov_status='all') }}" class="{% if status_filter == 'all' %}active{% endif %}">All</a>
 </nav>
 
-{% if filter_name or priority_filter %}
+{% if filter_name or priority_filter or assignee_filter or created_by_filter or resolved_by_filter %}
 <div class="active-filters">
-  {% if filter_name == 'mine' %}<span class="chip">Assigned to me <a href="?status={{ status_filter }}{% if priority_filter %}&priority={{ priority_filter }}{% endif %}">&times;</a></span>{% endif %}
-  {% if filter_name == 'unassigned' %}<span class="chip">Unassigned <a href="?status={{ status_filter }}{% if priority_filter %}&priority={{ priority_filter }}{% endif %}">&times;</a></span>{% endif %}
-  {% if priority_filter %}<span class="chip">Priority: <span class="prio prio-{{ priority_filter }}">{{ priority_filter }}</span> <a href="?status={{ status_filter }}{% if filter_name %}&filter={{ filter_name }}{% endif %}">&times;</a></span>{% endif %}
+  {% if filter_name == 'mine' %}
+    <span class="chip">Assigned to me <a href="{{ queue_url(ov_filter='') }}">&times;</a></span>
+  {% endif %}
+  {% if filter_name == 'unassigned' %}
+    <span class="chip">Unassigned <a href="{{ queue_url(ov_filter='') }}">&times;</a></span>
+  {% endif %}
+  {% if priority_filter %}
+    <span class="chip">Priority: <span class="prio prio-{{ priority_filter }}">{{ priority_filter }}</span> <a href="{{ queue_url(ov_priority='') }}">&times;</a></span>
+  {% endif %}
+  {% if assignee_filter %}
+    <span class="chip">Assignee: {{ assignee_filter }} <a href="{{ queue_url(ov_assignee='') }}">&times;</a></span>
+  {% endif %}
+  {% if created_by_filter %}
+    <span class="chip">Created by: {{ created_by_filter }} <a href="{{ queue_url(ov_created_by='') }}">&times;</a></span>
+  {% endif %}
+  {% if resolved_by_filter %}
+    <span class="chip">Resolved by: {{ resolved_by_filter }} <a href="{{ queue_url(ov_resolved_by='') }}">&times;</a></span>
+  {% endif %}
 </div>
 {% endif %}
 

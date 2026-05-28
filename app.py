@@ -391,6 +391,9 @@ def staff_queue():
     status_filter = request.args.get("status", "active")
     filter_name = request.args.get("filter")  # None | 'unassigned' | 'mine'
     priority_filter = request.args.get("priority")
+    assignee_filter = (request.args.get("assignee") or "").strip() or None
+    created_by_filter = (request.args.get("created_by") or "").strip() or None
+    resolved_by_filter = (request.args.get("resolved_by") or "").strip() or None
     me = g.current_user["username"]
     db = get_db()
 
@@ -410,6 +413,18 @@ def staff_queue():
         query += " AND LOWER(assigned_to) = LOWER(?)"
         params.append(me)
 
+    if assignee_filter:
+        query += " AND LOWER(assigned_to) = LOWER(?)"
+        params.append(assignee_filter)
+
+    if created_by_filter:
+        query += " AND LOWER(created_by_staff) = LOWER(?)"
+        params.append(created_by_filter)
+
+    if resolved_by_filter:
+        query += " AND LOWER(resolved_by) = LOWER(?)"
+        params.append(resolved_by_filter)
+
     if priority_filter in PRIORITIES:
         query += " AND priority = ?"
         params.append(priority_filter)
@@ -428,6 +443,9 @@ def staff_queue():
         status_filter=status_filter,
         filter_name=filter_name,
         priority_filter=priority_filter,
+        assignee_filter=assignee_filter,
+        created_by_filter=created_by_filter,
+        resolved_by_filter=resolved_by_filter,
         statuses=STATUSES,
         priorities=PRIORITIES,
     )
