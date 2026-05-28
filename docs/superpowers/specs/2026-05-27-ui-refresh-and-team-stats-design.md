@@ -35,7 +35,7 @@ Two-tier layout in `templates/base.html`, **only when `g.current_user` is set**.
 - Licenses
 - Recurring
 
-Active page gets a blue (`#2563eb`) bottom underline.
+Active page gets a blue (`#2563eb`) bottom underline. Implementation: a Jinja `active_nav` block in `base.html` reads `request.endpoint` and applies an `active` class to the matching link (no per-view variable plumbing needed).
 
 The route name `staff_queue` stays unchanged; only the link label changes from "Queue" to "Tickets" so existing `url_for('staff_queue')` calls keep working.
 
@@ -54,7 +54,12 @@ The current `<details class="nav-menu">` hamburger is removed — all four nav i
 - Time-window pill group above the table, in this order: `7d · 30d · MTD · QTD · All time`. **Default: MTD.**
 - Time-window selection persists in the Flask session (`session['team_activity_window']`). No DB column.
 - Clicking a staff member's name navigates to `/staff/tickets?assignee=<name>`.
-- Clicking a numeric cell navigates to the queue with the matching status filter (e.g., Created → `?status=any&created_by=<name>`; Assigned → `?assignee=<name>&status=active`; Resolved → `?status=resolved&resolved_by=<name>`).
+- Clicking a numeric cell navigates to the queue with the matching status filter:
+  - Created → `?created_by=<name>` (window not preserved — queue shows all-time)
+  - Assigned → `?assignee=<name>&status=active`
+  - Resolved → `?resolved_by=<name>&status=resolved`
+
+The existing queue route currently supports only `status`, `assigned to me`, `unassigned`, and `priority` filters. This design adds three new optional query params — `assignee=<username>`, `created_by=<username>`, `resolved_by=<username>` — as additional WHERE-clause conditions. The existing `assigned to me` / `unassigned` filters continue to work unchanged; the new `assignee=<username>` lets a staff user filter to *any* assignee. Active filters render as the existing removable chips.
 
 ## 3. Staff "New ticket" form
 
@@ -101,7 +106,11 @@ The existing WIP `ALTER TABLE licenses DROP COLUMN assigned_to` migration stays 
 - **`/staff` (dashboard)** — extend the existing handler:
   - Read `?window=` query param; fall back to `session['team_activity_window']`; fall back to `'mtd'`.
   - On any explicit `?window=` param, write it back to the session.
-  - Compute the window's start datetime (ISO string) in Python: `7d` / `30d` use `now - timedelta`; `mtd` uses first of current month at 00:00; `qtd` uses first of current quarter; `all` uses NULL (no lower bound).
+  - Compute the window's start datetime (ISO string) in Python:
+    - `7d` / `30d` — `now - timedelta(days=N)`.
+    - `mtd` — first of current month at 00:00 UTC.
+    - `qtd` — first day of current calendar quarter at 00:00 UTC (Jan 1 / Apr 1 / Jul 1 / Oct 1).
+    - `all` — NULL (no lower bound).
   - One SQL query joining `users` to ticket counts via correlated subqueries or grouped `LEFT JOIN`s. Columns: username, created_count (date-window-filtered, `created_by_staff` match), assigned_open_count (no window, `assigned_to` match + active status), resolved_count (window-filtered against `resolved_at`, `resolved_by` match). Result passed to template as `team_rows`.
   - Compute open-ticket badge total (used by the header) and expose via `g` or pass into `base.html` as a global. (Implementation detail: a `@app.context_processor` returning `{'open_ticket_count': ...}` when `g.current_user` is set.)
 - **No new top-level routes added.**
