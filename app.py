@@ -1415,13 +1415,28 @@ def staff_ticket(ticket_id):
             assigned_to = (request.form.get("assigned_to") or "").strip() or None
             if status not in STATUSES or priority not in PRIORITIES:
                 abort(400)
-            db.execute(
-                """
-                UPDATE tickets SET status=?, priority=?, assigned_to=?, updated_at=?
-                WHERE id=?
-                """,
-                (status, priority, assigned_to, now_iso(), ticket_id),
-            )
+            now = now_iso()
+            # Only set resolved_at / resolved_by when the status transitions
+            # INTO 'resolved'. Leaving 'resolved' does not clear them.
+            if status == "resolved" and ticket["status"] != "resolved":
+                db.execute(
+                    """
+                    UPDATE tickets
+                       SET status=?, priority=?, assigned_to=?, updated_at=?,
+                           resolved_at=?, resolved_by=?
+                     WHERE id=?
+                    """,
+                    (status, priority, assigned_to, now, now,
+                     g.current_user["username"], ticket_id),
+                )
+            else:
+                db.execute(
+                    """
+                    UPDATE tickets SET status=?, priority=?, assigned_to=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    (status, priority, assigned_to, now, ticket_id),
+                )
             db.commit()
         elif action == "comment":
             # Comment author is always the logged-in staff user (no spoofing via form).
