@@ -144,6 +144,7 @@ def init_db():
     # both "column already exists" and "no such column" cases.
     for stmt in (
         "ALTER TABLE licenses DROP COLUMN assigned_to",
+        "ALTER TABLE tickets ADD COLUMN created_by_staff TEXT",
     ):
         try:
             conn.execute(stmt)
@@ -1316,6 +1317,84 @@ def staff_license_delete(license_id):
     db.execute("DELETE FROM licenses WHERE id = ?", (license_id,))
     db.commit()
     return redirect(url_for("staff_licenses_list"))
+
+
+# ---------------------------------------------------------------------------
+# Staff quick-create ticket (work log)
+# ---------------------------------------------------------------------------
+
+
+@app.route("/staff/ticket/new", methods=["GET", "POST"])
+@login_required
+def staff_ticket_new():
+    """Streamlined ticket creation for staff logging their own work."""
+    me = g.current_user["username"]
+
+    if request.method == "POST":
+        subject = (request.form.get("subject") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        priority = (request.form.get("priority") or "normal").strip()
+        status = (request.form.get("status") or "in_progress").strip()
+        assigned_to = (request.form.get("assigned_to") or me).strip() or me
+
+        errors = []
+        if not subject:
+            errors.append("Subject is required.")
+        if len(subject) > 200:
+            errors.append("Subject must be 200 characters or fewer.")
+        if not description:
+            errors.append("Description is required.")
+        if priority not in PRIORITIES:
+            errors.append("Invalid priority.")
+        if status not in STATUSES:
+            errors.append("Invalid status.")
+
+        if errors:
+            return (
+                render_template(
+                    "staff_ticket_new.html",
+                    errors=errors,
+                    form=request.form,
+                    priorities=PRIORITIES,
+                    statuses=STATUSES,
+                    me=me,
+                ),
+                400,
+            )
+
+        now = now_iso()
+        cur = get_db().execute(
+            """
+            INSERT INTO tickets (
+                submitter_name, submitter_email, subject, description,
+                status, priority, assigned_to, created_at, updated_at,
+                created_by_staff
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                me,                            # submitter is the staff user
+                "internal@helpdesk.local",     # placeholder; not a real address
+                subject,
+                description,
+                status,
+                priority,
+                assigned_to,
+                now,
+                now,
+                me,                            # flag this as staff-created
+            ),
+        )
+        get_db().commit()
+        return redirect(url_for("staff_ticket", ticket_id=cur.lastrowid))
+
+    return render_template(
+        "staff_ticket_new.html",
+        errors=[],
+        form={"priority": "normal", "status": "in_progress", "assigned_to": me},
+        priorities=PRIORITIES,
+        statuses=STATUSES,
+        me=me,
+    )
 
 
 @app.route("/staff/ticket/<int:ticket_id>", methods=["GET", "POST"])
